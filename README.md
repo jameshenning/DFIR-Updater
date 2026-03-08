@@ -281,7 +281,7 @@ This will:
 
 ```powershell
 # On any machine with git installed:
-git clone https://github.com/YOUR_USERNAME/DFIR-Updater.git X:\DFIR-Updater
+git clone https://github.com/jameshenning/DFIR-Updater.git X:\DFIR-Updater
 
 # Then bootstrap the full toolkit:
 powershell -ExecutionPolicy Bypass -File X:\DFIR-Updater\Bootstrap-DFIR-Drive.ps1 -DriveLetter X
