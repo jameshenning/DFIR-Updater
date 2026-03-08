@@ -1,0 +1,50 @@
+# =============================================================================
+# DFIR-Updater .gitignore
+# =============================================================================
+# This file controls which files are tracked in the DFIR-Updater Git repository.
+# The goal is to version-control the updater framework (scripts, config, docs)
+# while excluding machine-specific, temporary, and backup artifacts.
+# =============================================================================
+
+# ── Backup files created during tool updates ─────────────────────────────────
+*.bak_*
+
+# ── Machine-specific scan output ─────────────────────────────────────────────
+scan-manifest.json
+
+# ── Setup/bootstrap logs (generated per-run on target drives) ────────────────
+setup-log.txt
+
+# ── Temporary files ──────────────────────────────────────────────────────────
+*.tmp
+*.temp
+~$*
+
+# ── Python bytecode ──────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── OS metadata files ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ── Log files ────────────────────────────────────────────────────────────────
+*.log
+
+# ── Forensic Mode artifacts ──────────────────────────────────────────────────
+# Cleanup reports are machine-specific and should not be tracked
+cleanup-reports/
+
+# The lockfile state is per-machine — do not track
+FORENSIC_MODE
+
+# =============================================================================
+# DO NOT ignore these files -- they are part of the framework:
+#   - tools-config.json     (the tool registry)
+#   - *.ps1                 (all PowerShell scripts)
+#   - README.md, README.txt (documentation)
+#   - Launch-Updater.bat    (batch launcher)
+# =============================================================================

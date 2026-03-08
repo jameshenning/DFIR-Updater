@@ -1,0 +1,186 @@
+{
+  "$schema": "DFIR Tool Update Configuration",
+  "version": "1.0",
+  "description": "Maps each DFIR tool on D:/ to its update source for automated or semi-automated update checking.",
+  "last_updated": "2026-03-08",
+  "tools": [
+    {
+      "name": "Arsenal Image Mounter",
+      "path": "01_Acquisition/Arsenal-Image-Mounter-v3.11.307",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://arsenalrecon.com/downloads",
+      "current_version": "3.11.307",
+      "version_pattern": "v([\\d.]+)",
+      "install_type": "extract_zip",
+      "notes": "Extract zip and replace folder contents. Rename folder to match new version. Requires .NET runtime."
+    },
+    {
+      "name": "Encrypted Disk Detector",
+      "path": "01_Acquisition/EncryptedDiskDetector",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://www.magnetforensics.com/resources/encrypted-disk-detector/",
+      "current_version": "3.1.0",
+      "version_pattern": "EDDv(\\d+)\\.exe",
+      "install_type": "copy_exe",
+      "notes": "Single EXE from Magnet Forensics. No automated API available; must check download page manually. Version encoded in filename as EDDv310 = 3.1.0."
+    },
+    {
+      "name": "Encrypted Disk Hunter",
+      "path": "01_Acquisition/EncryptedDiskHunter_v1.10.exe",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://www.yourealwaysbe.com/encrypted-disk-hunter/",
+      "current_version": "1.10",
+      "version_pattern": "EncryptedDiskHunter_v([\\d.]+)\\.exe",
+      "install_type": "copy_exe",
+      "notes": "Standalone EXE. GitHub repo by yourealwaysbe. If repo is unavailable, check https://www.yourealwaysbe.com/ or alternative forks."
+    },
+    {
+      "name": "FTK Imager",
+      "path": "01_Acquisition/FTK Imager",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://www.exterro.com/ftk-imager",
+      "current_version": null,
+      "version_pattern": "FTK[_ ]Imager[_ ]?([\\d.]+)",
+      "install_type": "manual",
+      "notes": "Distributed by Exterro (formerly AccessData). Requires form submission to download. No API or direct download link available. Must update manually."
+    },
+    {
+      "name": "KAPE",
+      "path": "01_Acquisition/KAPE",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://www.kroll.com/en/services/cyber-risk/incident-response-litigation-support/kroll-artifact-parser-extractor-kape",
+      "current_version": null,
+      "version_pattern": "kape[_-]?v?([\\d.]+)",
+      "install_type": "extract_zip",
+      "notes": "KAPE binary is distributed by Kroll (requires license/registration). KapeFiles (targets/modules) are on GitHub at EricZimmerman/KapeFiles and can be updated via KAPE's built-in updater. Use 'kape --update' to sync KapeFiles from GitHub. The binary itself requires manual download from Kroll."
+    },
+    {
+      "name": "Magnet RAM Capture",
+      "path": "01_Acquisition/MagnetRAMCapture_v120.exe",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://www.magnetforensics.com/resources/magnet-ram-capture/",
+      "current_version": "1.2.0",
+      "version_pattern": "MagnetRAMCapture_v(\\d+)\\.exe",
+      "install_type": "copy_exe",
+      "notes": "Single EXE from Magnet Forensics. No automated API; check download page manually. Version encoded in filename as v120 = 1.2.0. Tool may be discontinued; verify availability."
+    },
+    {
+      "name": "ExifTool",
+      "path": "02_Analysis/exiftool-13.28_64",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://exiftool.org",
+      "current_version": "13.28",
+      "version_pattern": "exiftool-([\\d.]+)",
+      "install_type": "extract_zip",
+      "notes": "Windows standalone executable distributed as zip. Also available directly from exiftool.org. GitHub releases mirror the official site. The _64 suffix indicates 64-bit Windows build."
+    },
+    {
+      "name": "HashMyFiles",
+      "path": "02_Analysis/HashMyFiles",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://www.nirsoft.net/utils/hash_my_files.html",
+      "current_version": null,
+      "version_pattern": "hashmyfiles-?([\\d.]+)",
+      "install_type": "extract_zip",
+      "notes": "NirSoft utility. Download the 64-bit version zip from nirsoft.net. No API for version checking; scrape the download page for version info. Direct download: https://www.nirsoft.net/utils/hashmyfiles-x64.zip"
+    },
+    {
+      "name": "hashcat",
+      "path": "02_Analysis/hashcat-6.2.6",
+      "source_type": "github",
+      "github_repo": "hashcat/hashcat",
+      "github_asset_pattern": "hashcat-[\\d.]+\\.7z",
+      "download_url": null,
+      "current_version": "6.2.6",
+      "version_pattern": "hashcat-([\\d.]+)",
+      "install_type": "extract_7z",
+      "notes": "Released as .7z archive on GitHub. Extract and replace folder. Contains binaries, rules, and charsets. Requires OpenCL-compatible GPU drivers."
+    },
+    {
+      "name": "PhotoRec / TestDisk",
+      "path": "02_Analysis/PhotoREC",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://www.cgsecurity.org/wiki/TestDisk_Download",
+      "current_version": null,
+      "version_pattern": "testdisk-([\\d.]+)\\.win",
+      "install_type": "extract_zip",
+      "notes": "PhotoRec is bundled with TestDisk by CGSecurity. Download the Windows zip from cgsecurity.org. No GitHub releases; must check the download page. Direct link pattern: https://www.cgsecurity.org/testdisk-<version>.win.zip"
+    },
+    {
+      "name": "Timeline Explorer",
+      "path": "02_Analysis/TimelineExplorer",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://ericzimmerman.github.io/#!index.md",
+      "current_version": null,
+      "version_pattern": "TimelineExplorer[_-]?v?([\\d.]+)",
+      "install_type": "extract_zip",
+      "notes": "Part of Eric Zimmerman's tools suite. Download from ericzimmerman.github.io. The site provides a batch downloader script (Get-ZimmermanTools.ps1) that can update all EZ tools at once. Direct zip URL: https://f001.backblazeb2.com/file/EricZimmermanTools/net6/TimelineExplorer.zip"
+    },
+    {
+      "name": "NetworkMiner",
+      "path": "03_Network/NetworkMiner_3-0",
+      "source_type": "web",
+      "github_repo": null,
+      "github_asset_pattern": null,
+      "download_url": "https://www.netresec.com/?page=NetworkMiner",
+      "current_version": "3.0",
+      "version_pattern": "NetworkMiner[_-]([\\d-]+)",
+      "install_type": "extract_zip",
+      "notes": "Free edition available from Netresec. Download as zip and extract. Version in folder name uses hyphens (3-0 = 3.0). Check netresec.com for latest version. Direct download link changes with each release."
+    },
+    {
+      "name": "Nmap",
+      "path": "03_Network/nmap-7.95-setup.exe",
+      "source_type": "web",
+      "github_repo": "nmap/nmap",
+      "github_asset_pattern": "nmap-[\\d.]+-setup\\.exe",
+      "download_url": "https://nmap.org/download.html",
+      "current_version": "7.95",
+      "version_pattern": "nmap-([\\d.]+)-setup\\.exe",
+      "install_type": "manual",
+      "notes": "Windows installer EXE from nmap.org. GitHub repo exists (nmap/nmap) but releases are primarily on nmap.org. Direct download pattern: https://nmap.org/dist/nmap-<version>-setup.exe. Installer requires running the setup wizard."
+    },
+    {
+      "name": "UniGetUI",
+      "path": "08_Utilities/UniGetUI",
+      "source_type": "github",
+      "github_repo": "marticliment/UniGetUI",
+      "github_asset_pattern": "UniGetUI\\.Installer\\.exe",
+      "download_url": null,
+      "current_version": null,
+      "version_pattern": "([\\d.]+)",
+      "install_type": "manual",
+      "notes": "Formerly WingetUI. GitHub releases include both installer EXE and portable zip. For portable deployment use the pattern 'UniGetUI.Portable.zip'. UniGetUI can update itself through its own interface. GitHub asset alternatives: UniGetUI.Portable.zip for extract-based install."
+    }
+  ],
+  "update_scripts": {
+    "ez_tools_updater": {
+      "description": "PowerShell script to update all Eric Zimmerman tools at once (Timeline Explorer, KAPE modules, etc.)",
+      "command": "powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/EricZimmerman/Get-ZimmermanTools/master/Get-ZimmermanTools.ps1' -OutFile 'Get-ZimmermanTools.ps1'; .\\Get-ZimmermanTools.ps1 -Dest 'D:\\02_Analysis'\""
+    },
+    "kape_module_updater": {
+      "description": "Update KAPE targets and modules from GitHub",
+      "command": "D:\\01_Acquisition\\KAPE\\kape\\kape.exe --update"
+    }
+  }
+}
