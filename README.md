@@ -93,6 +93,60 @@ The `FORENSIC_MODE` lockfile lives **on the USB drive itself**, not on the compu
 
 ---
 
+## Write Protection
+
+Write Protection sets a **disk-level readonly attribute** on the USB drive using Windows disk management. When enabled, the target computer's OS will refuse to write any data to the drive.
+
+> **Important:** This is a software-level protection. It is **not equivalent to a hardware write blocker** for court-admissible evidence handling. Modern Windows generally honors the readonly attribute, but it is not enforced at the hardware/firmware level. For maximum forensic soundness, use a USB drive with a physical write-protect switch (e.g., Kanguru FlashBlu30) or a dedicated hardware write blocker.
+
+### Toggling Write Protection
+
+- **Double-click `Write-Protect.bat`** — the script requests administrator privileges (required for disk attribute changes), then toggles the readonly attribute on or off.
+- The script identifies the correct disk, displays its current status, toggles it, and verifies the change.
+
+### Check Status Only
+
+```powershell
+# Run as administrator:
+.\Write-Protect.ps1 -Status
+```
+
+### What It Does
+
+| State | Effect |
+|---|---|
+| **Write Protection ON** | Windows treats the entire USB drive as read-only. No files can be created, modified, or deleted on the drive by any program. |
+| **Write Protection OFF** | Normal read-write access. The updater and other tools can write to the drive. |
+
+### Combining with Forensic Mode
+
+Write Protection and Forensic Mode serve complementary purposes:
+
+| Layer | What It Protects | How |
+|---|---|---|
+| **Forensic Mode** | Prevents the *updater* from running | Lockfile checked by updater scripts |
+| **Write Protection** | Prevents *any program* from writing to the drive | OS-level disk readonly attribute |
+
+**Recommended workflow for target examinations:**
+
+```
+1. At YOUR workstation  → Double-click Forensic-Mode.bat (ON)
+2. At YOUR workstation  → Double-click Write-Protect.bat (ON, requires admin)
+3. Eject drive           → Drive is now locked: updater blocked + disk read-only
+4. At TARGET computer    → Plug in drive, use your tools (FTK Imager, KAPE, etc.)
+                            Nothing can write to your drive
+5. Eject from target     → Unplug when done
+6. At YOUR workstation   → Double-click Write-Protect.bat (OFF, requires admin)
+7. At YOUR workstation   → Double-click Forensic-Mode.bat (OFF)
+8. Updater launches      → Checks for updates as normal
+```
+
+### Logging
+
+All write protection toggles are logged to `write-protect-logs/write-protect.log` on the USB drive with timestamps, computer name, and user. When turning protection ON, the log is written before the drive becomes read-only.
+
+---
+
 ## How It Works
 
 ### Architecture
@@ -107,9 +161,12 @@ D:\DFIR-Updater\
 ├── Init-GitRepo.ps1             # Push framework to GitHub
 ├── Forensic-Mode.bat            # Toggle Forensic Mode on/off
 ├── Forensic-Cleanup.ps1         # Remove updater artifacts from target
+├── Write-Protect.bat            # Toggle disk write protection (requires admin)
+├── Write-Protect.ps1            # Write protection logic (Set-Disk readonly)
 ├── tools-config.json            # Tool definitions and update sources
 ├── scan-manifest.json           # Auto-discovery tracking (auto-generated)
 ├── cleanup-reports/             # Forensic cleanup reports (auto-generated)
+├── write-protect-logs/          # Write protection toggle logs (auto-generated)
 ├── FORENSIC_MODE                # Lockfile — present when Forensic Mode is ON
 ├── .gitignore                   # Git ignore rules
 ├── README.md                    # This file

@@ -37,6 +37,7 @@ ehthumbs.db
 # ── Forensic Mode artifacts ──────────────────────────────────────────────────
 # Cleanup reports are machine-specific and should not be tracked
 cleanup-reports/
+write-protect-logs/
 
 # The lockfile state is per-machine — do not track
 FORENSIC_MODE
