@@ -177,8 +177,8 @@ public class ToolItem : INotifyPropertyChanged
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="DFIR Drive Updater"
-    Width="880" Height="650"
-    MinWidth="700" MinHeight="500"
+    Width="1050" Height="700"
+    MinWidth="850" MinHeight="550"
     WindowStartupLocation="CenterScreen"
     Background="#1E1E1E"
     Foreground="White"
@@ -256,27 +256,36 @@ public class ToolItem : INotifyPropertyChanged
             </Setter>
         </Style>
 
-        <!-- Close (red-ish) button -->
-        <Style x:Key="CloseButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
-            <Setter Property="Background"  Value="#4A2020"/>
-            <Setter Property="BorderBrush" Value="#6A3030"/>
+        <!-- Sidebar NavButton style -->
+        <Style x:Key="NavButton" TargetType="Button">
+            <Setter Property="Width" Value="56"/>
+            <Setter Property="Height" Value="48"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#888888"/>
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="3"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid>
+                            <!-- Active indicator bar (left edge) -->
+                            <Border x:Name="activeBar" Width="3" HorizontalAlignment="Left"
+                                    Background="Transparent" CornerRadius="0,2,2,0"/>
+                            <Border x:Name="bgBorder" Background="{TemplateBinding Background}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#7A3030"/>
+                                <Setter TargetName="bgBorder" Property="Background" Value="#2A2A30"/>
                             </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#9A4040"/>
+                            <Trigger Property="Tag" Value="Active">
+                                <Setter TargetName="activeBar" Property="Background" Value="#0078D4"/>
+                                <Setter TargetName="bgBorder" Property="Background" Value="#252530"/>
+                                <Setter Property="Foreground" Value="White"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -298,16 +307,14 @@ public class ToolItem : INotifyPropertyChanged
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>   <!-- Header -->
-            <RowDefinition Height="Auto"/>   <!-- Status bar -->
-            <RowDefinition Height="*"/>      <!-- DataGrid -->
-            <RowDefinition Height="Auto"/>   <!-- Buttons -->
-            <RowDefinition Height="Auto"/>   <!-- Log toggle -->
-            <RowDefinition Height="Auto"/>   <!-- Log area -->
+            <RowDefinition Height="Auto"/>   <!-- Row 0: Header -->
+            <RowDefinition Height="*"/>      <!-- Row 1: Main area (sidebar + content) -->
+            <RowDefinition Height="Auto"/>   <!-- Row 2: Status bar (shared) -->
+            <RowDefinition Height="Auto"/>   <!-- Row 3: Log panel (shared, collapsed) -->
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Border Grid.Row="0" Background="#252526" Padding="16,12" BorderBrush="#3E3E3E" BorderThickness="0,0,0,1">
+        <!-- ═══ Row 0: Header ═══ -->
+        <Border Grid.Row="0" Background="#252526" Padding="12,8" BorderBrush="#3E3E3E" BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -351,7 +358,6 @@ public class ToolItem : INotifyPropertyChanged
                             </Button.Template>
                         </Button>
                     </StackPanel>
-                    <TextBlock x:Name="txtDrivePath" FontSize="11" Foreground="#999999" Margin="0,2,0,0"/>
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal">
@@ -361,12 +367,326 @@ public class ToolItem : INotifyPropertyChanged
             </Grid>
         </Border>
 
-        <!-- Status Bar -->
-        <Border Grid.Row="1" Background="#2D2D30" Padding="12,6" BorderBrush="#3E3E3E" BorderThickness="0,0,0,1">
+        <!-- ═══ Row 1: Main area - Sidebar + Content ═══ -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="56"/>   <!-- Sidebar -->
+                <ColumnDefinition Width="*"/>    <!-- Content -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Sidebar -->
+            <Border Grid.Column="0" Background="#1B1B1F" BorderBrush="#3E3E3E" BorderThickness="0,0,1,0">
+                <StackPanel VerticalAlignment="Top">
+                    <Button x:Name="btnNavDashboard" Content="&#x1F3E0;" Style="{StaticResource NavButton}" ToolTip="Dashboard" Tag="Active"/>
+                    <Button x:Name="btnNavUpdates"   Content="&#x1F504;" Style="{StaticResource NavButton}" ToolTip="Update Center"/>
+                    <Button x:Name="btnNavSettings"  Content="&#x2699;"  Style="{StaticResource NavButton}" ToolTip="Settings"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Content area -->
+            <Grid Grid.Column="1">
+
+                <!-- ── Panel 1: Dashboard (Tool Launcher) ── -->
+                <Grid x:Name="panelDashboard" Visibility="Visible">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Top bar: Tools label | category chips | search box | refresh -->
+                    <Border Grid.Row="0" Background="#252526" Padding="12,8" BorderBrush="#3E3E3E" BorderThickness="0,0,0,1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Tools" FontSize="16" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                            <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <StackPanel x:Name="pnlDashCategories" Orientation="Horizontal" VerticalAlignment="Center"/>
+                            </ScrollViewer>
+                            <TextBox x:Name="txtDashSearch" Grid.Column="2" Width="200" Height="28" Background="#333333" Foreground="White" BorderBrush="#555555" Padding="6,4" FontSize="12" VerticalContentAlignment="Center" Margin="8,0,0,0"/>
+                            <Button x:Name="btnDashRefresh" Grid.Column="3" Content="&#x1F504;" FontSize="14" ToolTip="Rescan tools" Background="Transparent" Foreground="#AAAAAA" BorderThickness="0" Cursor="Hand" Padding="8,4" Margin="4,0,0,0"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Scrollable tile area -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="#1E1E1E" Padding="12">
+                        <ItemsControl x:Name="icDashTools">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- ── Panel 2: Updates ── -->
+                <Grid x:Name="panelUpdates" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Update button bar -->
+                    <Border Grid.Row="0" Background="#252526" Padding="12,8" BorderBrush="#3E3E3E" BorderThickness="0,0,0,1">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button x:Name="btnRefresh" Content="&#x1F504; Check for Updates" Style="{StaticResource ActionButton}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="btnSelectUpdates" Content="Select All Updates" Style="{StaticResource ActionButton}"/>
+                                <Button x:Name="btnDeselectAll"    Content="Deselect All"       Style="{StaticResource ActionButton}"/>
+                                <Button x:Name="btnUpdateSelected" Content="Update Selected"    Style="{StaticResource PrimaryButton}"/>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- DataGrid -->
+                    <DataGrid x:Name="dgTools" Grid.Row="1"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="False"
+                              SelectionMode="Single"
+                              SelectionUnit="FullRow"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserReorderColumns="False"
+                              CanUserSortColumns="True"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="#2E2E2E"
+                              Background="#1E1E1E"
+                              Foreground="White"
+                              RowBackground="#1E1E1E"
+                              AlternatingRowBackground="#232323"
+                              BorderBrush="#3E3E3E"
+                              BorderThickness="0"
+                              HeadersVisibility="Column"
+                              RowHeaderWidth="0"
+                              FontSize="13"
+                              Margin="0">
+
+                        <DataGrid.Resources>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#333333"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#2A2A2A"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
+                        </DataGrid.Resources>
+
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="6,4"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="DataGridCell">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </DataGrid.CellStyle>
+
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="Background" Value="#1E1E1E"/>
+                                <Setter Property="BorderBrush" Value="#2E2E2E"/>
+                                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StatusKey}" Value="UpToDate">
+                                        <Setter Property="Background" Value="#1C2E1C"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StatusKey}" Value="UpdateAvailable">
+                                        <Setter Property="Background" Value="#2E2E1C"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StatusKey}" Value="ManualCheck">
+                                        <Setter Property="Background" Value="#2A2A2A"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StatusKey}" Value="Checking">
+                                        <Setter Property="Background" Value="#1E1E1E"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StatusKey}" Value="Error">
+                                        <Setter Property="Background" Value="#2E1C1C"/>
+                                    </DataTrigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#333340"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="" Width="40" CanUserResize="False" CanUserSort="False">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="Tool Name"       Binding="{Binding Name}"           Width="*"    IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Category"        Binding="{Binding Category}"       Width="110"  IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Current"         Binding="{Binding CurrentVersion}" Width="90"   IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Latest"          Binding="{Binding LatestVersion}"  Width="90"   IsReadOnly="True"/>
+
+                            <DataGridTemplateColumn Header="Status" Width="150" IsReadOnly="True" CanUserSort="True" SortMemberPath="StatusKey">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <!-- Regular status text (hidden for ManualCheck) -->
+                                            <TextBlock Text="{Binding Status}" Padding="4,0">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="#AAAAAA"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding StatusKey}" Value="UpToDate">
+                                                                <Setter Property="Foreground" Value="#6BCB77"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusKey}" Value="UpdateAvailable">
+                                                                <Setter Property="Foreground" Value="#FFD93D"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusKey}" Value="ManualCheck">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusKey}" Value="Checking">
+                                                                <Setter Property="Foreground" Value="#6CB4EE"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusKey}" Value="Error">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <!-- Clickable link for ManualCheck and Error (failed update) items -->
+                                            <Button Tag="OpenDownloadPage" Cursor="Hand"
+                                                    ToolTip="{Binding DownloadUrl}">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <StackPanel Orientation="Horizontal" Cursor="Hand">
+                                                            <TextBlock x:Name="linkText"
+                                                                       Text="{Binding Status}"
+                                                                       TextDecorations="Underline"
+                                                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"
+                                                                       Padding="4,0,0,0"/>
+                                                            <TextBlock x:Name="linkArrow" Text=" &#x2197;"
+                                                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"
+                                                                       VerticalAlignment="Center"
+                                                                       Padding="2,0,0,0"/>
+                                                        </StackPanel>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="linkText" Property="Foreground" Value="#9DD4FF"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                                <Button.Style>
+                                                    <Style TargetType="Button">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Setter Property="Foreground" Value="#6CB4EE"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding StatusKey}" Value="ManualCheck">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusKey}" Value="Error">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                <Setter Property="Foreground" Value="#FF6B6B"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+
+                <!-- ── Panel 3: Settings ── -->
+                <Grid x:Name="panelSettings" Visibility="Collapsed">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="#1E1E1E" Padding="24,16">
+                        <StackPanel MaxWidth="600" HorizontalAlignment="Left">
+
+                            <!-- Forensic Mode Card -->
+                            <Border Background="#252526" CornerRadius="6" Padding="16" BorderBrush="#3E3E3E" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="Forensic Mode" FontSize="16" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                                    <TextBlock Text="When enabled, the drive is set to read-only and all updates are blocked. Use this before connecting to a target or evidence system to preserve chain of custody." Foreground="#AAAAAA" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <Button x:Name="btnForensicToggleSettings" Content="FORENSIC MODE: OFF" Padding="14,8"
+                                            FontSize="12" FontWeight="SemiBold" Cursor="Hand" BorderThickness="1"
+                                            Background="#1B5E20" Foreground="#4CAF50" BorderBrush="#2E7D32" HorizontalAlignment="Left">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="fsBorder" CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        Background="{TemplateBinding Background}"
+                                                        BorderBrush="{TemplateBinding BorderBrush}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="fsBorder" Property="Opacity" Value="0.8"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter TargetName="fsBorder" Property="Opacity" Value="0.65"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Reports Card -->
+                            <Border Background="#252526" CornerRadius="6" Padding="16" BorderBrush="#3E3E3E" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="Reports" FontSize="16" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Generate a forensic integrity report documenting the current state of all tools on the drive, including SHA-256 hashes, for chain-of-custody purposes." Foreground="#AAAAAA" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <Button x:Name="btnForensicReportSettings" Content="Generate Forensic Report" Style="{StaticResource ActionButton}" HorizontalAlignment="Left"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Tool Discovery Card -->
+                            <Border Background="#252526" CornerRadius="6" Padding="16" BorderBrush="#3E3E3E" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="Tool Discovery" FontSize="16" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Scan the drive for executables that are not yet tracked in the tools configuration. Discovered tools can be added to the config for automatic update checking." Foreground="#AAAAAA" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <Button x:Name="btnScanNewToolsSettings" Content="Scan for New Tools" Style="{StaticResource ActionButton}" HorizontalAlignment="Left"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Drive Information Card -->
+                            <Border Background="#252526" CornerRadius="6" Padding="16" BorderBrush="#3E3E3E" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="Drive Information" FontSize="16" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                                    <TextBlock x:Name="txtDrivePathSettings" Text="Drive: " Foreground="#AAAAAA" FontSize="12" Margin="0,0,0,4"/>
+                                    <TextBlock x:Name="txtToolCountSettings" Text="Tools: " Foreground="#AAAAAA" FontSize="12"/>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+            </Grid>
+        </Grid>
+
+        <!-- ═══ Row 2: Status Bar (shared) ═══ -->
+        <Border Grid.Row="2" Background="#2D2D30" Padding="12,6" BorderBrush="#3E3E3E" BorderThickness="0,1,0,0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="txtStatus" Grid.Column="0" Text="Ready" FontSize="12"
                            Foreground="#CCCCCC" VerticalAlignment="Center" Margin="0,0,12,0"/>
@@ -374,202 +694,14 @@ public class ToolItem : INotifyPropertyChanged
                              Minimum="0" Maximum="100" Value="0"
                              Background="#3E3E3E" Foreground="#0078D4"
                              BorderThickness="0" VerticalAlignment="Center"/>
+                <ToggleButton x:Name="btnToggleLog" Grid.Column="2" Content="&#x25B6; Log" FontSize="11"
+                              Background="Transparent" Foreground="#AAAAAA" BorderThickness="0"
+                              Cursor="Hand" Padding="8,2" Margin="8,0,0,0"/>
             </Grid>
         </Border>
 
-        <!-- DataGrid -->
-        <DataGrid x:Name="dgTools" Grid.Row="2"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="False"
-                  SelectionMode="Single"
-                  SelectionUnit="FullRow"
-                  CanUserAddRows="False"
-                  CanUserDeleteRows="False"
-                  CanUserReorderColumns="False"
-                  CanUserSortColumns="True"
-                  GridLinesVisibility="Horizontal"
-                  HorizontalGridLinesBrush="#2E2E2E"
-                  Background="#1E1E1E"
-                  Foreground="White"
-                  RowBackground="#1E1E1E"
-                  AlternatingRowBackground="#232323"
-                  BorderBrush="#3E3E3E"
-                  BorderThickness="0"
-                  HeadersVisibility="Column"
-                  RowHeaderWidth="0"
-                  FontSize="13"
-                  Margin="0">
-
-            <DataGrid.Resources>
-                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#333333"/>
-                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#2A2A2A"/>
-                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
-            </DataGrid.Resources>
-
-            <DataGrid.CellStyle>
-                <Style TargetType="DataGridCell">
-                    <Setter Property="Foreground" Value="White"/>
-                    <Setter Property="BorderThickness" Value="0"/>
-                    <Setter Property="Padding" Value="6,4"/>
-                    <Setter Property="Template">
-                        <Setter.Value>
-                            <ControlTemplate TargetType="DataGridCell">
-                                <Border Background="{TemplateBinding Background}"
-                                        Padding="{TemplateBinding Padding}">
-                                    <ContentPresenter VerticalAlignment="Center"/>
-                                </Border>
-                            </ControlTemplate>
-                        </Setter.Value>
-                    </Setter>
-                </Style>
-            </DataGrid.CellStyle>
-
-            <DataGrid.RowStyle>
-                <Style TargetType="DataGridRow">
-                    <Setter Property="Background" Value="#1E1E1E"/>
-                    <Setter Property="BorderBrush" Value="#2E2E2E"/>
-                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding StatusKey}" Value="UpToDate">
-                            <Setter Property="Background" Value="#1C2E1C"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding StatusKey}" Value="UpdateAvailable">
-                            <Setter Property="Background" Value="#2E2E1C"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding StatusKey}" Value="ManualCheck">
-                            <Setter Property="Background" Value="#2A2A2A"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding StatusKey}" Value="Checking">
-                            <Setter Property="Background" Value="#1E1E1E"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding StatusKey}" Value="Error">
-                            <Setter Property="Background" Value="#2E1C1C"/>
-                        </DataTrigger>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#333340"/>
-                        </Trigger>
-                    </Style.Triggers>
-                </Style>
-            </DataGrid.RowStyle>
-
-            <DataGrid.Columns>
-                <DataGridTemplateColumn Header="" Width="40" CanUserResize="False" CanUserSort="False">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
-                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-
-                <DataGridTextColumn Header="Tool Name"       Binding="{Binding Name}"           Width="*"    IsReadOnly="True"/>
-                <DataGridTextColumn Header="Category"        Binding="{Binding Category}"       Width="110"  IsReadOnly="True"/>
-                <DataGridTextColumn Header="Current"         Binding="{Binding CurrentVersion}" Width="90"   IsReadOnly="True"/>
-                <DataGridTextColumn Header="Latest"          Binding="{Binding LatestVersion}"  Width="90"   IsReadOnly="True"/>
-
-                <DataGridTemplateColumn Header="Status" Width="150" IsReadOnly="True" CanUserSort="True" SortMemberPath="StatusKey">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <Grid>
-                                <!-- Regular status text (hidden for ManualCheck) -->
-                                <TextBlock Text="{Binding Status}" Padding="4,0">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="#AAAAAA"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding StatusKey}" Value="UpToDate">
-                                                    <Setter Property="Foreground" Value="#6BCB77"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding StatusKey}" Value="UpdateAvailable">
-                                                    <Setter Property="Foreground" Value="#FFD93D"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding StatusKey}" Value="ManualCheck">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding StatusKey}" Value="Checking">
-                                                    <Setter Property="Foreground" Value="#6CB4EE"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding StatusKey}" Value="Error">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                                <!-- Clickable link for ManualCheck and Error (failed update) items -->
-                                <Button Tag="OpenDownloadPage" Cursor="Hand"
-                                        ToolTip="{Binding DownloadUrl}">
-                                    <Button.Template>
-                                        <ControlTemplate TargetType="Button">
-                                            <StackPanel Orientation="Horizontal" Cursor="Hand">
-                                                <TextBlock x:Name="linkText"
-                                                           Text="{Binding Status}"
-                                                           TextDecorations="Underline"
-                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"
-                                                           Padding="4,0,0,0"/>
-                                                <TextBlock x:Name="linkArrow" Text=" &#x2197;"
-                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource TemplatedParent}}"
-                                                           VerticalAlignment="Center"
-                                                           Padding="2,0,0,0"/>
-                                            </StackPanel>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="linkText" Property="Foreground" Value="#9DD4FF"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Button.Template>
-                                    <Button.Style>
-                                        <Style TargetType="Button">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Setter Property="Foreground" Value="#6CB4EE"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding StatusKey}" Value="ManualCheck">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding StatusKey}" Value="Error">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                    <Setter Property="Foreground" Value="#FF6B6B"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                </Button>
-                            </Grid>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-            </DataGrid.Columns>
-        </DataGrid>
-
-        <!-- Button Bar -->
-        <Border Grid.Row="3" Background="#252526" Padding="12,10" BorderBrush="#3E3E3E" BorderThickness="0,1,0,0">
-            <DockPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button x:Name="btnToolLauncher" Content="&#x1F680; Tool Launcher" Style="{StaticResource ActionButton}" Margin="4,0,4,0"/>
-                    <Button x:Name="btnForensicReport" Content="Forensic Report" Style="{StaticResource ActionButton}" Margin="4,0,8,0"/>
-                    <Button x:Name="btnClose" Content="Close" Style="{StaticResource CloseButton}"/>
-                </StackPanel>
-
-                <StackPanel Orientation="Horizontal">
-                    <Button x:Name="btnSelectUpdates" Content="Select All Updates" Style="{StaticResource ActionButton}"/>
-                    <Button x:Name="btnDeselectAll"    Content="Deselect All"       Style="{StaticResource ActionButton}"/>
-                    <Button x:Name="btnUpdateSelected" Content="Update Selected"    Style="{StaticResource PrimaryButton}"/>
-                    <Button x:Name="btnRefresh"        Content="Refresh"            Style="{StaticResource ActionButton}"/>
-                    <Button x:Name="btnScanNewTools"   Content="Scan for New Tools" Style="{StaticResource ActionButton}"/>
-                </StackPanel>
-            </DockPanel>
-        </Border>
-
-        <!-- Log Toggle -->
-        <Border Grid.Row="4" Background="#252526" Padding="12,5" BorderBrush="#3E3E3E" BorderThickness="0,1,0,0">
-            <ToggleButton x:Name="btnToggleLog" Content="&#x25B6; Show Log" FontSize="12"
-                          Background="Transparent" Foreground="#AAAAAA" BorderThickness="0"
-                          Cursor="Hand" HorizontalAlignment="Left" Padding="4,2"/>
-        </Border>
-
-        <!-- Log Area (collapsed by default) -->
-        <Border x:Name="logPanel" Grid.Row="5" Background="#1A1A1A" Padding="8"
+        <!-- ═══ Row 3: Log Area (collapsed by default) ═══ -->
+        <Border x:Name="logPanel" Grid.Row="3" Background="#1A1A1A" Padding="8"
                 BorderBrush="#3E3E3E" BorderThickness="0,1,0,0"
                 Visibility="Collapsed" MaxHeight="180">
             <TextBox x:Name="txtLog"
@@ -592,7 +724,6 @@ $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
 
 # ─── Grab Named Controls ────────────────────────────────────────────────────
-$txtDrivePath      = $window.FindName("txtDrivePath")
 $txtStatus         = $window.FindName("txtStatus")
 $txtSummary        = $window.FindName("txtSummary")
 $progressBar       = $window.FindName("progressBar")
@@ -601,19 +732,35 @@ $btnSelectUpdates  = $window.FindName("btnSelectUpdates")
 $btnDeselectAll    = $window.FindName("btnDeselectAll")
 $btnUpdateSelected = $window.FindName("btnUpdateSelected")
 $btnRefresh        = $window.FindName("btnRefresh")
-$btnScanNewTools   = $window.FindName("btnScanNewTools")
-$btnClose          = $window.FindName("btnClose")
 $btnToggleLog      = $window.FindName("btnToggleLog")
 $btnForensicToggle = $window.FindName("btnForensicToggle")
-$btnToolLauncher   = $window.FindName("btnToolLauncher")
-$btnForensicReport = $window.FindName("btnForensicReport")
 $logPanel          = $window.FindName("logPanel")
 $txtLog            = $window.FindName("txtLog")
+
+# Navigation & panels
+$panelDashboard    = $window.FindName("panelDashboard")
+$panelUpdates      = $window.FindName("panelUpdates")
+$panelSettings     = $window.FindName("panelSettings")
+$btnNavDashboard   = $window.FindName("btnNavDashboard")
+$btnNavUpdates     = $window.FindName("btnNavUpdates")
+$btnNavSettings    = $window.FindName("btnNavSettings")
+
+# Dashboard controls
+$pnlDashCategories = $window.FindName("pnlDashCategories")
+$icDashTools       = $window.FindName("icDashTools")
+$txtDashSearch     = $window.FindName("txtDashSearch")
+$btnDashRefresh    = $window.FindName("btnDashRefresh")
+
+# Settings controls
+$btnForensicToggleSettings  = $window.FindName("btnForensicToggleSettings")
+$btnForensicReportSettings  = $window.FindName("btnForensicReportSettings")
+$btnScanNewToolsSettings    = $window.FindName("btnScanNewToolsSettings")
+$txtDrivePathSettings       = $window.FindName("txtDrivePathSettings")
+$txtToolCountSettings       = $window.FindName("txtToolCountSettings")
 
 # ─── State ───────────────────────────────────────────────────────────────────
 $script:ToolItems = [System.Collections.ObjectModel.ObservableCollection[ToolItem]]::new()
 $dgTools.ItemsSource = $script:ToolItems
-$txtDrivePath.Text = "Drive: $script:DriveRoot"
 
 # ─── Category Map: derive display category from path prefix ─────────────────
 $script:CategoryMap = @{
@@ -684,32 +831,44 @@ $script:BrushConverter = New-Object System.Windows.Media.BrushConverter
 
 function Update-ForensicModeUI {
     if ($script:ForensicModeActive) {
-        # ON state: red/locked
+        # ON state: red/locked - header badge
         $btnForensicToggle.Content    = "FORENSIC MODE: ON"
         $btnForensicToggle.Background = $script:BrushConverter.ConvertFrom("#7B1F1F")
         $btnForensicToggle.Foreground = $script:BrushConverter.ConvertFrom("#FF8A80")
         $btnForensicToggle.BorderBrush = $script:BrushConverter.ConvertFrom("#B71C1C")
+
+        # Settings panel toggle button
+        $btnForensicToggleSettings.Content    = "FORENSIC MODE: ON"
+        $btnForensicToggleSettings.Background = $script:BrushConverter.ConvertFrom("#7B1F1F")
+        $btnForensicToggleSettings.Foreground = $script:BrushConverter.ConvertFrom("#FF8A80")
+        $btnForensicToggleSettings.BorderBrush = $script:BrushConverter.ConvertFrom("#B71C1C")
 
         # Disable all modification buttons
         $btnSelectUpdates.IsEnabled  = $false
         $btnDeselectAll.IsEnabled    = $false
         $btnUpdateSelected.IsEnabled = $false
         $btnRefresh.IsEnabled        = $false
-        $btnScanNewTools.IsEnabled   = $false
+        $btnScanNewToolsSettings.IsEnabled = $false
         $txtStatus.Text = "Forensic Mode active - drive is read-only. Updates are disabled."
     } else {
-        # OFF state: green/unlocked
+        # OFF state: green/unlocked - header badge
         $btnForensicToggle.Content    = "FORENSIC MODE: OFF"
         $btnForensicToggle.Background = $script:BrushConverter.ConvertFrom("#1B5E20")
         $btnForensicToggle.Foreground = $script:BrushConverter.ConvertFrom("#4CAF50")
         $btnForensicToggle.BorderBrush = $script:BrushConverter.ConvertFrom("#2E7D32")
+
+        # Settings panel toggle button
+        $btnForensicToggleSettings.Content    = "FORENSIC MODE: OFF"
+        $btnForensicToggleSettings.Background = $script:BrushConverter.ConvertFrom("#1B5E20")
+        $btnForensicToggleSettings.Foreground = $script:BrushConverter.ConvertFrom("#4CAF50")
+        $btnForensicToggleSettings.BorderBrush = $script:BrushConverter.ConvertFrom("#2E7D32")
 
         # Enable buttons
         $btnSelectUpdates.IsEnabled  = $true
         $btnDeselectAll.IsEnabled    = $true
         $btnUpdateSelected.IsEnabled = $true
         $btnRefresh.IsEnabled        = $true
-        $btnScanNewTools.IsEnabled   = $true
+        $btnScanNewToolsSettings.IsEnabled = $true
         $txtStatus.Text = "Ready"
     }
 }
@@ -876,7 +1035,7 @@ function Toggle-ForensicMode {
 # ─── Helper: Generate Forensic Report ─────────────────────────────────────────
 function New-ForensicReport {
     $timestamp    = Get-Date -Format 'yyyy-MM-dd_HHmmss'
-    $reportDir    = Join-Path $script:ScriptDir 'forensic-reports'
+    $reportDir    = Join-Path $script:DriveRoot 'DFIR-Updater\forensic-reports'
     $reportFile   = Join-Path $reportDir "Forensic-Report_$timestamp.txt"
     $separator    = '=' * 72
     $subSeparator = '-' * 72
@@ -1498,6 +1657,14 @@ function Start-UpdateCheck {
                         Set-StatusText "Check complete. All tools are up to date."
                     }
                     Write-Log "Update check finished. $updatesAvailable update(s) available."
+
+                    # Update nav badge on Updates button
+                    $updatesAvail = @($script:ToolItems | Where-Object { $_.StatusKey -eq "UpdateAvailable" }).Count
+                    if ($updatesAvail -gt 0) {
+                        $btnNavUpdates.Content = [char]::ConvertFromUtf32(0x1F504) + " $updatesAvail"
+                    } else {
+                        $btnNavUpdates.Content = [char]::ConvertFromUtf32(0x1F504)
+                    }
                 }
             } else {
                 # While running, update progress based on how many items have been resolved
@@ -1777,332 +1944,225 @@ function Start-SelectedUpdates {
     $script:UpdTimer.Start()
 }
 
-# ─── Tool Launcher Window ────────────────────────────────────────────────────
-function Show-ToolLauncher {
-    if (-not $script:HasToolLauncher) {
-        [System.Windows.MessageBox]::Show(
-            "Tool Launcher module not found at:`n$script:ToolLauncherPath",
-            "Module Not Found",
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Warning
-        )
-        return
+# ─── Navigation ──────────────────────────────────────────────────────────────
+function Set-ActivePanel {
+    param([string]$PanelName)
+    $panelDashboard.Visibility = [System.Windows.Visibility]::Collapsed
+    $panelUpdates.Visibility   = [System.Windows.Visibility]::Collapsed
+    $panelSettings.Visibility  = [System.Windows.Visibility]::Collapsed
+    $btnNavDashboard.Tag = $null
+    $btnNavUpdates.Tag   = $null
+    $btnNavSettings.Tag  = $null
+    switch ($PanelName) {
+        "Dashboard" { $panelDashboard.Visibility = [System.Windows.Visibility]::Visible; $btnNavDashboard.Tag = "Active" }
+        "Updates"   { $panelUpdates.Visibility = [System.Windows.Visibility]::Visible; $btnNavUpdates.Tag = "Active" }
+        "Settings"  { $panelSettings.Visibility = [System.Windows.Visibility]::Visible; $btnNavSettings.Tag = "Active" }
+    }
+}
+
+# ─── Dashboard: Icon Cache ───────────────────────────────────────────────────
+$script:IconCache = @{}
+
+# ─── Dashboard: Icon extraction helper ───────────────────────────────────────
+function Get-ToolIcon {
+    param([string]$ExePath, [string]$PngIconPath)
+
+    # Try PNG from PortableApps first
+    if ($PngIconPath -and (Test-Path -LiteralPath $PngIconPath)) {
+        if ($script:IconCache.ContainsKey($PngIconPath)) { return $script:IconCache[$PngIconPath] }
+        try {
+            $uri = New-Object System.Uri($PngIconPath)
+            $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bmp.BeginInit()
+            $bmp.UriSource = $uri
+            $bmp.DecodePixelWidth = 36
+            $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+            $bmp.EndInit()
+            $bmp.Freeze()
+            $script:IconCache[$PngIconPath] = $bmp
+            return $bmp
+        } catch { }
     }
 
+    # Extract icon from exe
+    if ($ExePath -and (Test-Path -LiteralPath $ExePath) -and $ExePath -match '\.exe$') {
+        if ($script:IconCache.ContainsKey($ExePath)) { return $script:IconCache[$ExePath] }
+        try {
+            $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($ExePath)
+            if ($icon) {
+                $bitmap = $icon.ToBitmap()
+                $ms = New-Object System.IO.MemoryStream
+                $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+                $ms.Position = 0
+
+                $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
+                $bmp.BeginInit()
+                $bmp.StreamSource = $ms
+                $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+                $bmp.EndInit()
+                $bmp.Freeze()
+                $ms.Dispose()
+                $icon.Dispose()
+                $bitmap.Dispose()
+
+                $script:IconCache[$ExePath] = $bmp
+                return $bmp
+            }
+        } catch { }
+    }
+
+    return $null
+}
+
+# ─── Dashboard: Build tile for a single tool ─────────────────────────────────
+function New-ToolTile {
+    param([PSCustomObject]$Tool)
+
+    $border = New-Object System.Windows.Controls.Border
+    $border.Width = 150
+    $border.Height = 120
+    $border.Margin = New-Object System.Windows.Thickness(4)
+    $border.Padding = New-Object System.Windows.Thickness(6)
+    $border.CornerRadius = New-Object System.Windows.CornerRadius(6)
+    $border.Background = $script:BrushConverter.ConvertFrom('#2D2D2D')
+    $border.BorderBrush = $script:BrushConverter.ConvertFrom('#3E3E3E')
+    $border.BorderThickness = New-Object System.Windows.Thickness(1)
+    $border.Cursor = [System.Windows.Input.Cursors]::Hand
+    $border.ToolTip = "$($Tool.Name)`n$($Tool.ExePath)"
+    $border.Tag = $Tool.ExePath
+
+    # Hover effects
+    $border.Add_MouseEnter({
+        $this.Background = $script:BrushConverter.ConvertFrom('#3A3A4A')
+        $this.BorderBrush = $script:BrushConverter.ConvertFrom('#0078D4')
+    }.GetNewClosure())
+    $border.Add_MouseLeave({
+        $this.Background = $script:BrushConverter.ConvertFrom('#2D2D2D')
+        $this.BorderBrush = $script:BrushConverter.ConvertFrom('#3E3E3E')
+    }.GetNewClosure())
+
+    # Click to launch
+    $exePath = $Tool.ExePath
+    $toolName = $Tool.Name
+    $border.Add_MouseLeftButtonUp({
+        try {
+            $workingDir = Split-Path $exePath -Parent
+            Start-Process -FilePath $exePath -WorkingDirectory $workingDir
+            Write-Log "Launched: $toolName ($exePath)"
+        } catch {
+            Write-Log "ERROR: Failed to launch $toolName - $($_.Exception.Message)"
+            [System.Windows.MessageBox]::Show(
+                "Failed to launch '$toolName':`n$($_.Exception.Message)",
+                "Launch Error",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Error
+            )
+        }
+    }.GetNewClosure())
+
+    $stack = New-Object System.Windows.Controls.StackPanel
+    $stack.HorizontalAlignment = 'Center'
+    $stack.VerticalAlignment = 'Center'
+
+    # Icon
+    $iconImage = New-Object System.Windows.Controls.Image
+    $iconImage.Width = 36
+    $iconImage.Height = 36
+    $iconImage.Stretch = [System.Windows.Media.Stretch]::Uniform
+    $iconImage.HorizontalAlignment = 'Center'
+    $iconImage.Margin = New-Object System.Windows.Thickness(0, 4, 0, 6)
+
+    $bmpSrc = Get-ToolIcon -ExePath $Tool.ExePath -PngIconPath $Tool.IconPath
+    if ($bmpSrc) {
+        $iconImage.Source = $bmpSrc
+    } else {
+        # Fallback: text glyph
+        $iconImage.Visibility = [System.Windows.Visibility]::Collapsed
+        $fallback = New-Object System.Windows.Controls.TextBlock
+        $fallback.Text = [char]::ConvertFromUtf32(0x1F4E6)
+        $fallback.FontSize = 32
+        $fallback.HorizontalAlignment = 'Center'
+        $fallback.Margin = New-Object System.Windows.Thickness(0, 4, 0, 6)
+        $stack.Children.Add($fallback)
+    }
+
+    if ($iconImage.Visibility -ne [System.Windows.Visibility]::Collapsed) {
+        $stack.Children.Add($iconImage)
+    }
+
+    # Name label
+    $label = New-Object System.Windows.Controls.TextBlock
+    $label.Text = $Tool.Name
+    $label.Foreground = $script:BrushConverter.ConvertFrom('#DDDDDD')
+    $label.FontSize = 11
+    $label.TextAlignment = 'Center'
+    $label.TextWrapping = [System.Windows.TextWrapping]::Wrap
+    $label.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
+    $label.MaxHeight = 34
+    $label.HorizontalAlignment = 'Center'
+    $stack.Children.Add($label)
+
+    # Category badge
+    $catLabel = New-Object System.Windows.Controls.TextBlock
+    $catLabel.Text = $Tool.Category
+    $catLabel.Foreground = $script:BrushConverter.ConvertFrom('#777777')
+    $catLabel.FontSize = 9
+    $catLabel.HorizontalAlignment = 'Center'
+    $catLabel.Margin = New-Object System.Windows.Thickness(0, 2, 0, 0)
+    $stack.Children.Add($catLabel)
+
+    $border.Child = $stack
+    return $border
+}
+
+# ─── Dashboard: Populate tiles ───────────────────────────────────────────────
+function Populate-DashboardTiles {
+    param([string]$CategoryFilter = 'All', [string]$SearchFilter = '')
+
+    $icDashTools.Items.Clear()
+
+    $filtered = $script:AllLaunchTools
+    if ($CategoryFilter -ne 'All') {
+        $filtered = @($filtered | Where-Object { $_.Category -eq $CategoryFilter })
+    }
+    if ($SearchFilter -and $SearchFilter -ne 'Search tools...') {
+        $filtered = @($filtered | Where-Object { $_.Name -match [regex]::Escape($SearchFilter) })
+    }
+
+    foreach ($tool in $filtered) {
+        $tile = New-ToolTile -Tool $tool
+        $icDashTools.Items.Add($tile)
+    }
+}
+
+# ─── Dashboard: Initialize ───────────────────────────────────────────────────
+function Initialize-Dashboard {
     Write-Log "Scanning drive for launchable tools..."
     $launchTools = $null
     try {
         $launchTools = Get-LaunchableTools -DriveRoot $script:DriveRoot
     } catch {
         Write-Log "ERROR: Tool scan failed: $($_.Exception.Message)"
-        [System.Windows.MessageBox]::Show(
-            "Failed to scan for tools:`n$($_.Exception.Message)",
-            "Scan Error",
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Error
-        )
         return
     }
 
     if (-not $launchTools -or @($launchTools).Count -eq 0) {
-        [System.Windows.MessageBox]::Show(
-            "No launchable tools were found on the drive.",
-            "No Tools Found",
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Information
-        )
+        Write-Log "No launchable tools found on the drive."
         return
     }
 
     Write-Log "Found $(@($launchTools).Count) launchable tools."
+    $script:AllLaunchTools = $launchTools
+    $script:DashCurrentCategory = 'All'
 
-    # Build category list for tabs
+    # Update Settings panel tool count
+    $txtToolCountSettings.Text = "Tools: $(@($launchTools).Count) launchable tools found"
+
+    # Build category chips
+    $pnlDashCategories.Children.Clear()
     $categories = @('All') + @($launchTools | ForEach-Object { $_.Category } | Sort-Object -Unique)
 
-    # ── Build Launcher XAML ──
-    [xml]$launcherXaml = @"
-<Window
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="DFIR Tool Launcher"
-    Width="900" Height="650"
-    MinWidth="600" MinHeight="400"
-    WindowStartupLocation="CenterOwner"
-    Background="#1E1E1E"
-    Foreground="White"
-    FontFamily="Segoe UI">
-
-    <Grid Margin="0">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-
-        <!-- Header -->
-        <Border Grid.Row="0" Background="#252526" Padding="16,10" BorderBrush="#3E3E3E" BorderThickness="0,0,0,1">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="&#x1F680;" FontSize="24" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="Tool Launcher" FontSize="18" FontWeight="Bold" Foreground="White"/>
-                    <TextBlock x:Name="txtToolCount" FontSize="11" Foreground="#999999" Margin="0,2,0,0"/>
-                </StackPanel>
-                <TextBox x:Name="txtSearch" Grid.Column="2" Width="220" Height="28"
-                         Background="#333333" Foreground="White" BorderBrush="#555555"
-                         Padding="6,4" FontSize="12" VerticalContentAlignment="Center"
-                         Tag="Search tools..."/>
-            </Grid>
-        </Border>
-
-        <!-- Category Tabs -->
-        <Border Grid.Row="1" Background="#2D2D30" Padding="8,4" BorderBrush="#3E3E3E" BorderThickness="0,0,0,1">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                <StackPanel x:Name="pnlCategories" Orientation="Horizontal"/>
-            </ScrollViewer>
-        </Border>
-
-        <!-- Tool Tiles -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                      Background="#1E1E1E" Padding="8">
-            <ItemsControl x:Name="icTools">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-            </ItemsControl>
-        </ScrollViewer>
-
-        <!-- Footer -->
-        <Border Grid.Row="3" Background="#252526" Padding="12,8" BorderBrush="#3E3E3E" BorderThickness="0,1,0,0">
-            <DockPanel>
-                <Button x:Name="btnLauncherRefresh" DockPanel.Dock="Right" Content="Refresh"
-                        Background="#3C3C3C" Foreground="White" Padding="14,5" Margin="4,0,0,0"
-                        BorderBrush="#555555" BorderThickness="1" Cursor="Hand"/>
-                <TextBlock x:Name="txtLauncherStatus" VerticalAlignment="Center"
-                           Foreground="#AAAAAA" FontSize="12"/>
-            </DockPanel>
-        </Border>
-    </Grid>
-</Window>
-"@
-
-    $launcherReader = New-Object System.Xml.XmlNodeReader $launcherXaml
-    $launcherWin = [Windows.Markup.XamlReader]::Load($launcherReader)
-    $launcherWin.Owner = $window
-
-    $txtToolCount     = $launcherWin.FindName("txtToolCount")
-    $txtSearch         = $launcherWin.FindName("txtSearch")
-    $pnlCategories     = $launcherWin.FindName("pnlCategories")
-    $icTools           = $launcherWin.FindName("icTools")
-    $btnLauncherRefresh = $launcherWin.FindName("btnLauncherRefresh")
-    $txtLauncherStatus = $launcherWin.FindName("txtLauncherStatus")
-
-    # ── Search placeholder behavior ──
-    $txtSearch.Add_GotFocus({
-        if ($txtSearch.Text -eq 'Search tools...') {
-            $txtSearch.Text = ''
-            $txtSearch.Foreground = $script:BrushConverter.ConvertFrom('#FFFFFF')
-        }
-    })
-    $txtSearch.Add_LostFocus({
-        if ([string]::IsNullOrWhiteSpace($txtSearch.Text)) {
-            $txtSearch.Text = 'Search tools...'
-            $txtSearch.Foreground = $script:BrushConverter.ConvertFrom('#888888')
-        }
-    })
-    $txtSearch.Text = 'Search tools...'
-    $txtSearch.Foreground = $script:BrushConverter.ConvertFrom('#888888')
-
-    # ── Icon extraction helper ──
-    $script:IconCache = @{}
-
-    function Get-ToolIcon {
-        param([string]$ExePath, [string]$PngIconPath)
-
-        # Try PNG from PortableApps first
-        if ($PngIconPath -and (Test-Path -LiteralPath $PngIconPath)) {
-            if ($script:IconCache.ContainsKey($PngIconPath)) { return $script:IconCache[$PngIconPath] }
-            try {
-                $uri = New-Object System.Uri($PngIconPath)
-                $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
-                $bmp.BeginInit()
-                $bmp.UriSource = $uri
-                $bmp.DecodePixelWidth = 32
-                $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-                $bmp.EndInit()
-                $bmp.Freeze()
-                $script:IconCache[$PngIconPath] = $bmp
-                return $bmp
-            } catch { }
-        }
-
-        # Extract icon from exe
-        if ($ExePath -and (Test-Path -LiteralPath $ExePath) -and $ExePath -match '\.exe$') {
-            if ($script:IconCache.ContainsKey($ExePath)) { return $script:IconCache[$ExePath] }
-            try {
-                $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($ExePath)
-                if ($icon) {
-                    $bitmap = $icon.ToBitmap()
-                    $ms = New-Object System.IO.MemoryStream
-                    $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-                    $ms.Position = 0
-
-                    $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
-                    $bmp.BeginInit()
-                    $bmp.StreamSource = $ms
-                    $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-                    $bmp.EndInit()
-                    $bmp.Freeze()
-                    $ms.Dispose()
-                    $icon.Dispose()
-                    $bitmap.Dispose()
-
-                    $script:IconCache[$ExePath] = $bmp
-                    return $bmp
-                }
-            } catch { }
-        }
-
-        return $null
-    }
-
-    # ── Build tile for a single tool ──
-    function New-ToolTile {
-        param([PSCustomObject]$Tool)
-
-        $border = New-Object System.Windows.Controls.Border
-        $border.Width = 130
-        $border.Height = 110
-        $border.Margin = New-Object System.Windows.Thickness(4)
-        $border.Padding = New-Object System.Windows.Thickness(6)
-        $border.CornerRadius = New-Object System.Windows.CornerRadius(6)
-        $border.Background = $script:BrushConverter.ConvertFrom('#2D2D2D')
-        $border.BorderBrush = $script:BrushConverter.ConvertFrom('#3E3E3E')
-        $border.BorderThickness = New-Object System.Windows.Thickness(1)
-        $border.Cursor = [System.Windows.Input.Cursors]::Hand
-        $border.ToolTip = "$($Tool.Name)`n$($Tool.ExePath)"
-        $border.Tag = $Tool.ExePath
-
-        # Hover effects
-        $border.Add_MouseEnter({
-            $this.Background = $script:BrushConverter.ConvertFrom('#3A3A4A')
-            $this.BorderBrush = $script:BrushConverter.ConvertFrom('#0078D4')
-        }.GetNewClosure())
-        $border.Add_MouseLeave({
-            $this.Background = $script:BrushConverter.ConvertFrom('#2D2D2D')
-            $this.BorderBrush = $script:BrushConverter.ConvertFrom('#3E3E3E')
-        }.GetNewClosure())
-
-        # Click to launch
-        $exePath = $Tool.ExePath
-        $toolName = $Tool.Name
-        $border.Add_MouseLeftButtonUp({
-            try {
-                $workingDir = Split-Path $exePath -Parent
-                Start-Process -FilePath $exePath -WorkingDirectory $workingDir
-                Write-Log "Launched: $toolName ($exePath)"
-                $txtLauncherStatus.Text = "Launched: $toolName"
-            } catch {
-                Write-Log "ERROR: Failed to launch $toolName - $($_.Exception.Message)"
-                [System.Windows.MessageBox]::Show(
-                    "Failed to launch '$toolName':`n$($_.Exception.Message)",
-                    "Launch Error",
-                    [System.Windows.MessageBoxButton]::OK,
-                    [System.Windows.MessageBoxImage]::Error
-                )
-            }
-        }.GetNewClosure())
-
-        $stack = New-Object System.Windows.Controls.StackPanel
-        $stack.HorizontalAlignment = 'Center'
-        $stack.VerticalAlignment = 'Center'
-
-        # Icon
-        $iconImage = New-Object System.Windows.Controls.Image
-        $iconImage.Width = 32
-        $iconImage.Height = 32
-        $iconImage.Stretch = [System.Windows.Media.Stretch]::Uniform
-        $iconImage.HorizontalAlignment = 'Center'
-        $iconImage.Margin = New-Object System.Windows.Thickness(0, 4, 0, 6)
-
-        $bmpSrc = Get-ToolIcon -ExePath $Tool.ExePath -PngIconPath $Tool.IconPath
-        if ($bmpSrc) {
-            $iconImage.Source = $bmpSrc
-        } else {
-            # Fallback: text glyph
-            $iconImage.Visibility = [System.Windows.Visibility]::Collapsed
-            $fallback = New-Object System.Windows.Controls.TextBlock
-            $fallback.Text = [char]0x1F4E6
-            $fallback.FontSize = 28
-            $fallback.HorizontalAlignment = 'Center'
-            $fallback.Margin = New-Object System.Windows.Thickness(0, 4, 0, 6)
-            $stack.Children.Add($fallback)
-        }
-
-        if ($iconImage.Visibility -ne [System.Windows.Visibility]::Collapsed) {
-            $stack.Children.Add($iconImage)
-        }
-
-        # Name label
-        $label = New-Object System.Windows.Controls.TextBlock
-        $label.Text = $Tool.Name
-        $label.Foreground = $script:BrushConverter.ConvertFrom('#DDDDDD')
-        $label.FontSize = 11
-        $label.TextAlignment = 'Center'
-        $label.TextWrapping = [System.Windows.TextWrapping]::Wrap
-        $label.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
-        $label.MaxHeight = 34
-        $label.HorizontalAlignment = 'Center'
-        $stack.Children.Add($label)
-
-        # Category badge
-        $catLabel = New-Object System.Windows.Controls.TextBlock
-        $catLabel.Text = $Tool.Category
-        $catLabel.Foreground = $script:BrushConverter.ConvertFrom('#777777')
-        $catLabel.FontSize = 9
-        $catLabel.HorizontalAlignment = 'Center'
-        $catLabel.Margin = New-Object System.Windows.Thickness(0, 2, 0, 0)
-        $stack.Children.Add($catLabel)
-
-        $border.Child = $stack
-        return $border
-    }
-
-    # ── Populate tiles ──
-    $script:AllLaunchTools = $launchTools
-    $script:CurrentCategory = 'All'
-
-    function Populate-Tiles {
-        param([string]$CategoryFilter = 'All', [string]$SearchFilter = '')
-
-        $icTools.Items.Clear()
-
-        $filtered = $script:AllLaunchTools
-        if ($CategoryFilter -ne 'All') {
-            $filtered = @($filtered | Where-Object { $_.Category -eq $CategoryFilter })
-        }
-        if ($SearchFilter -and $SearchFilter -ne 'Search tools...') {
-            $filtered = @($filtered | Where-Object { $_.Name -match [regex]::Escape($SearchFilter) })
-        }
-
-        foreach ($tool in $filtered) {
-            $tile = New-ToolTile -Tool $tool
-            $icTools.Items.Add($tile)
-        }
-
-        $txtToolCount.Text = "$($filtered.Count) of $($script:AllLaunchTools.Count) tools"
-        $txtLauncherStatus.Text = "Showing $($filtered.Count) tool(s)" + $(if ($CategoryFilter -ne 'All') { " in $CategoryFilter" } else { '' })
-    }
-
-    # ── Build category tabs ──
-    $script:CatButtons = @{}
+    $script:DashCatButtons = @{}
     foreach ($cat in $categories) {
         $btn = New-Object System.Windows.Controls.Button
         $btn.Content = $cat
@@ -2124,10 +2184,10 @@ function Show-ToolLauncher {
 
         $catName = $cat
         $btn.Add_Click({
-            $script:CurrentCategory = $catName
-            # Update tab styling
-            foreach ($k in $script:CatButtons.Keys) {
-                $b = $script:CatButtons[$k]
+            $script:DashCurrentCategory = $catName
+            # Update chip styling
+            foreach ($k in $script:DashCatButtons.Keys) {
+                $b = $script:DashCatButtons[$k]
                 if ($k -eq $catName) {
                     $b.Background = $script:BrushConverter.ConvertFrom('#3A3A4A')
                     $b.Foreground = $script:BrushConverter.ConvertFrom('#FFFFFF')
@@ -2138,39 +2198,16 @@ function Show-ToolLauncher {
                     $b.BorderBrush = [System.Windows.Media.Brushes]::Transparent
                 }
             }
-            $searchText = $txtSearch.Text
-            Populate-Tiles -CategoryFilter $catName -SearchFilter $searchText
+            $searchText = $txtDashSearch.Text
+            Populate-DashboardTiles -CategoryFilter $catName -SearchFilter $searchText
         }.GetNewClosure())
 
-        $script:CatButtons[$cat] = $btn
-        $pnlCategories.Children.Add($btn)
+        $script:DashCatButtons[$cat] = $btn
+        $pnlDashCategories.Children.Add($btn)
     }
 
-    # ── Search filtering ──
-    $txtSearch.Add_TextChanged({
-        $searchText = $txtSearch.Text
-        if ($searchText -eq 'Search tools...') { $searchText = '' }
-        Populate-Tiles -CategoryFilter $script:CurrentCategory -SearchFilter $searchText
-    }.GetNewClosure())
-
-    # ── Refresh button ──
-    $btnLauncherRefresh.Add_Click({
-        $txtLauncherStatus.Text = "Rescanning..."
-        try {
-            $script:AllLaunchTools = Get-LaunchableTools -DriveRoot $script:DriveRoot
-            $script:IconCache = @{}
-            Write-Log "Tool Launcher refreshed: found $($script:AllLaunchTools.Count) tools."
-        } catch {
-            Write-Log "ERROR: Launcher refresh failed: $($_.Exception.Message)"
-        }
-        $searchText = $txtSearch.Text
-        Populate-Tiles -CategoryFilter $script:CurrentCategory -SearchFilter $searchText
-    }.GetNewClosure())
-
     # Initial populate
-    Populate-Tiles -CategoryFilter 'All'
-
-    $launcherWin.ShowDialog()
+    Populate-DashboardTiles -CategoryFilter 'All'
 }
 
 # ─── Wire Up Event Handlers ─────────────────────────────────────────────────
@@ -2411,8 +2448,52 @@ $btnRefresh.Add_Click({
     Start-UpdateCheck
 })
 
-# Scan for New Tools
-$btnScanNewTools.Add_Click({
+# ── Navigation button handlers ──
+$btnNavDashboard.Add_Click({ Set-ActivePanel "Dashboard" })
+$btnNavUpdates.Add_Click({ Set-ActivePanel "Updates" })
+$btnNavSettings.Add_Click({ Set-ActivePanel "Settings" })
+
+# ── Dashboard: Search placeholder behavior ──
+$txtDashSearch.Text = 'Search tools...'
+$txtDashSearch.Foreground = $script:BrushConverter.ConvertFrom('#888888')
+
+$txtDashSearch.Add_GotFocus({
+    if ($txtDashSearch.Text -eq 'Search tools...') {
+        $txtDashSearch.Text = ''
+        $txtDashSearch.Foreground = $script:BrushConverter.ConvertFrom('#FFFFFF')
+    }
+})
+$txtDashSearch.Add_LostFocus({
+    if ([string]::IsNullOrWhiteSpace($txtDashSearch.Text)) {
+        $txtDashSearch.Text = 'Search tools...'
+        $txtDashSearch.Foreground = $script:BrushConverter.ConvertFrom('#888888')
+    }
+})
+
+# ── Dashboard: Search filtering ──
+$txtDashSearch.Add_TextChanged({
+    $searchText = $txtDashSearch.Text
+    if ($searchText -eq 'Search tools...') { $searchText = '' }
+    if ($script:AllLaunchTools) {
+        Populate-DashboardTiles -CategoryFilter $script:DashCurrentCategory -SearchFilter $searchText
+    }
+}.GetNewClosure())
+
+# ── Dashboard: Refresh button rescans the drive ──
+$btnDashRefresh.Add_Click({
+    if (-not $script:HasToolLauncher) { return }
+    try {
+        $script:AllLaunchTools = Get-LaunchableTools -DriveRoot $script:DriveRoot
+        $script:IconCache = @{}
+        Write-Log "Dashboard refreshed: found $($script:AllLaunchTools.Count) tools."
+        Initialize-Dashboard
+    } catch {
+        Write-Log "ERROR: Dashboard refresh failed: $($_.Exception.Message)"
+    }
+}.GetNewClosure())
+
+# ── Settings: Scan for New Tools ──
+$btnScanNewToolsSettings.Add_Click({
     if (-not $script:HasAutoDiscovery) {
         [System.Windows.MessageBox]::Show(
             "The Auto-Discovery module was not found at:`n$script:AutoDiscoveryPath`n`nThis feature requires the Auto-Discovery module to be installed in the modules folder.",
@@ -2522,13 +2603,8 @@ $btnScanNewTools.Add_Click({
     }
 })
 
-# Tool Launcher
-$btnToolLauncher.Add_Click({
-    Show-ToolLauncher
-})
-
-# Forensic Report
-$btnForensicReport.Add_Click({
+# ── Settings: Forensic Report ──
+$btnForensicReportSettings.Add_Click({
     Set-StatusText "Generating forensic report..."
     Write-Log "Generating forensic integrity report..."
 
@@ -2550,20 +2626,20 @@ $btnForensicReport.Add_Click({
     }
 })
 
-# Close
-$btnClose.Add_Click({
-    $window.Close()
+# ── Settings: Forensic Mode Toggle ──
+$btnForensicToggleSettings.Add_Click({
+    Toggle-ForensicMode
 })
 
 # Toggle Log panel
 $btnToggleLog.Add_Checked({
     $logPanel.Visibility = [System.Windows.Visibility]::Visible
-    $btnToggleLog.Content = [char]0x25BC + " Hide Log"
+    $btnToggleLog.Content = [char]0x25BC + " Log"
 })
 
 $btnToggleLog.Add_Unchecked({
     $logPanel.Visibility = [System.Windows.Visibility]::Collapsed
-    $btnToggleLog.Content = [char]0x25B6 + " Show Log"
+    $btnToggleLog.Content = [char]0x25B6 + " Log"
 })
 
 # ─── Window Loaded: Kick Off Initial Check ──────────────────────────────────
@@ -2575,8 +2651,22 @@ $window.Add_Loaded({
         if (-not $script:HasModule) {
             Write-Log "WARNING: Update-Checker module not found. Running in preview mode."
         }
+
+        # Set default panel
+        Set-ActivePanel "Dashboard"
+
+        # Initialize dashboard
+        if ($script:HasToolLauncher) {
+            try {
+                Initialize-Dashboard
+            } catch {
+                Write-Log "Dashboard init failed: $($_.Exception.Message)"
+            }
+        }
+
         # Set initial forensic mode UI
         Update-ForensicModeUI
+
         if ($script:ForensicModeActive) {
             Write-Log "Forensic Mode is active. Updates are disabled."
             # Re-apply write protection in case it was lost (e.g. drive re-plugged)
@@ -2590,6 +2680,9 @@ $window.Add_Loaded({
         } else {
             Start-UpdateCheck
         }
+
+        # Show drive info in Settings
+        $txtDrivePathSettings.Text = "Drive: $script:DriveRoot"
     } catch {
         # Ensure the GUI is usable even if initialization fails
         Write-Host "[DIAG] ERROR in Window.Loaded: $($_.Exception.Message)" -ForegroundColor Red
@@ -2601,7 +2694,6 @@ $window.Add_Loaded({
             $btnUpdateSelected.IsEnabled = $true
             $btnSelectUpdates.IsEnabled  = $true
             $btnDeselectAll.IsEnabled    = $true
-            $btnScanNewTools.IsEnabled   = $true
         } catch {}
     }
 })

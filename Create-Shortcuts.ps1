@@ -53,7 +53,7 @@ Write-Host "`nCreating DFIR tool shortcuts in: $ShortcutDir`n" -ForegroundColor 
 
 # ── 01_Acquisition ──
 Write-Host "Acquisition Tools:" -ForegroundColor White
-New-Shortcut -Name 'Arsenal Image Mounter'    -TargetPath '01_Acquisition\Arsenal-Image-Mounter-v3.11.307\ArsenalImageMounter.exe'
+New-Shortcut -Name 'Arsenal Image Mounter'    -TargetPath '01_Acquisition\Arsenal-Image-Mounter-v3.12.331\ArsenalImageMounter.exe'
 New-Shortcut -Name 'Encrypted Disk Detector'  -TargetPath '01_Acquisition\EncryptedDiskDetector\EDDv310.exe'
 New-Shortcut -Name 'Encrypted Disk Hunter'    -TargetPath '01_Acquisition\EncryptedDiskHunter_v1.10.exe'
 New-Shortcut -Name 'FTK Imager'               -TargetPath '01_Acquisition\FTK Imager\FTK Imager.exe'
