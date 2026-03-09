@@ -32,6 +32,8 @@ A portable, self-contained update manager for DFIR (Digital Forensics & Incident
 - **Fully portable** — Runs from the USB drive on any Windows 10/11 machine with no installation required
 - **Backup & rollback** — Creates timestamped backups before every update and rolls back automatically on failure
 - **Dynamic drive detection** — Works regardless of which drive letter Windows assigns
+- **Tool Launcher** — Browse and launch any tool on the drive with a visual tile-based interface, organized by category with search and filtering
+- **Shortcut creation** — Generates `.lnk` shortcuts for all DFIR tools in a `Shortcuts` folder
 - **Forensic mode** — Prevents the updater from running on target/evidence computers while keeping all DFIR tools accessible
 - **Write protection** — Sets a disk-level readonly attribute to prevent any program from writing to the drive (requires admin)
 
@@ -69,9 +71,11 @@ When the updater launches, it opens a dark-themed WPF window with the following 
 - **"Check for Updates" button** — Queries all GitHub-sourced tools for their latest release and compares versions. Web-sourced tools are flagged as "Check manually" with a clickable link to their download page.
 - **"Update Selected" button** — Downloads and installs updates for all tools with checked checkboxes. For each selected tool, the updater: (1) downloads the release asset to a temp folder, (2) creates a timestamped backup of the existing files, (3) extracts or copies the new files into place, (4) verifies the update succeeded. If any step fails, it automatically restores from the backup.
 - **"Scan for New Tools" button** — Runs the auto-discovery module to detect tools on the drive that aren't yet tracked in `tools-config.json`. Displays results in a popup where you can review and add them with one click.
+- **"Tool Launcher" button** — Opens a separate window that displays every launchable tool on the drive as a clickable tile with its icon. Supports category filtering and search. Automatically discovers new tools when you add them to the drive.
 - **Progress bar** — Shows download and installation progress during updates.
 - **Log panel** — A scrolling text area at the bottom that displays real-time status messages, API responses, errors, and version comparison results as the updater works.
-- **Forensic Mode badge** — A green "FORENSIC MODE: OFF" label in the header. If forensic mode were active, the GUI would not launch at all (it exits with a warning dialog).
+- **Forensic Mode badge** — A green "FORENSIC MODE: OFF" label in the header. Click to toggle. When active, all update/modification buttons are disabled.
+- **Right-click context menu** — On any tool row: open download page, mark as updated, or set a custom version number.
 
 ---
 
@@ -227,6 +231,7 @@ D:\DFIR-Updater\
 ├── Forensic-Cleanup.ps1         # Remove updater artifacts from target
 ├── Write-Protect.bat            # Toggle disk write protection (requires admin)
 ├── Write-Protect.ps1            # Write protection logic (Set-Disk readonly)
+├── Create-Shortcuts.ps1            # Generate .lnk shortcuts for all tools
 ├── tools-config.json            # Tool definitions and update sources
 ├── scan-manifest.json           # Auto-discovery tracking (auto-generated)
 ├── cleanup-reports/             # Forensic cleanup reports (auto-generated)
@@ -237,7 +242,8 @@ D:\DFIR-Updater\
 ├── README.txt                   # Plain-text quick reference
 └── modules/
     ├── Update-Checker.ps1       # GitHub API, version comparison, downloads
-    └── Auto-Discovery.ps1       # New tool detection and identification
+    ├── Auto-Discovery.ps1       # New tool detection and identification
+    └── Tool-Launcher.ps1        # Drive scanning for the Tool Launcher window
 ```
 
 ### Script Descriptions
@@ -254,8 +260,10 @@ D:\DFIR-Updater\
 | `Forensic-Cleanup.ps1` | Scans a target computer for updater artifacts and securely deletes them (zero-overwrite). Accepts `-ReportOnly`, `-WhatIf`, `-Confirm`, and `-Verbose`. | Partial (prefetch cleanup needs admin) |
 | `Write-Protect.bat` | Entry point for write protection. Handles UAC elevation and calls `Write-Protect.ps1`. | Yes |
 | `Write-Protect.ps1` | Toggles the disk readonly attribute. Accepts `-DriveLetter` and `-Status`. Uses `Set-Disk` with `diskpart` fallback. | Yes |
-| `modules/Update-Checker.ps1` | Backend module. Functions for GitHub API queries, version comparison, asset downloads, backup creation, extraction, and rollback. | No |
+| `Create-Shortcuts.ps1` | Creates `.lnk` shortcuts in `D:\Shortcuts\` for all known DFIR tools on the drive. Safe to run multiple times. | No |
+| `modules/Update-Checker.ps1` | Backend module. Functions for GitHub API queries, version comparison, web scraping, asset downloads, backup creation, extraction, and rollback. | No |
 | `modules/Auto-Discovery.ps1` | Backend module. Scans drive folders for untracked tools, matches against 133+ known DFIR GitHub repositories, extracts version numbers, and generates config entries. | No |
+| `modules/Tool-Launcher.ps1` | Backend module. Scans all category folders and PortableApps for launchable executables, extracts icons, and returns a tool inventory for the Tool Launcher window. Read-only, safe for Forensic Mode. | No |
 
 ### Update Flow
 
@@ -313,6 +321,27 @@ Display results in GUI (color-coded rows)
              → Match against known DFIR repo database
              → Show results in popup for review and one-click addition
 ```
+
+### Tool Launcher
+
+The Tool Launcher is an integrated window accessible from the main GUI via the "Tool Launcher" button. It provides a visual, tile-based interface for launching any tool on the drive.
+
+**Features:**
+
+- **Automatic scanning** — Discovers all launchable executables across category folders (`01_Acquisition/`, `02_Analysis/`, etc.) and the `PortableApps/` directory
+- **Icon extraction** — Extracts and displays icons from executables. For PortableApps, uses the `appicon_32.png` if available. Falls back to a generic icon for `.bat` files and tools without extractable icons
+- **Category tabs** — Filter tools by category (Acquisition, Analysis, Network, Mobile, PortableApps, Utilities, or All)
+- **Search** — Live search across all tool names
+- **Click to launch** — Single-click any tile to launch the tool. Sets the working directory to the tool's folder
+- **Refresh** — Rescan the drive to detect newly added tools without restarting the application
+- **Read-only operation** — The launcher only reads the drive; it never writes. Safe to use in Forensic Mode
+
+**How it discovers tools:**
+
+1. **Known tools** — A built-in registry of well-known DFIR tools (FTK Imager, KAPE, hashcat, etc.) with curated display names and correct primary executables
+2. **Category folders** — For unknown subdirectories, picks the primary executable by matching the folder name or selecting the largest `.exe`
+3. **PortableApps** — Parses `appinfo.ini` from each PortableApps folder to get the display name and correct executable
+4. **Deduplication** — Ensures each executable appears only once, even if discovered by multiple methods
 
 ### Version Comparison
 

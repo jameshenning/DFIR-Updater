@@ -87,7 +87,14 @@ $ActionCommand = @'
 Get-Volume | Where-Object { $_.FileSystemLabel -eq 'DFIR' } | ForEach-Object {
     $drive = $_.DriveLetter + ':\'
     $forensicFlag = Join-Path $drive 'FORENSIC_MODE'
-    if (Test-Path $forensicFlag) { return }
+    if (Test-Path $forensicFlag) {
+        # Forensic mode active: re-enforce write protection silently, skip GUI
+        try {
+            $p = Get-Partition -DriveLetter $_.DriveLetter -ErrorAction Stop
+            Set-Disk -Number $p.DiskNumber -IsReadOnly $true -ErrorAction SilentlyContinue
+        } catch { }
+        return
+    }
     $script = Join-Path $drive 'DFIR-Updater\DFIR-Updater-GUI.ps1'
     if (Test-Path $script) { & $script }
 }
@@ -95,7 +102,14 @@ if (-not (Get-Variable -Name script -ErrorAction SilentlyContinue) -or -not (Tes
     # Fallback: search every drive for the DFIR-Updater folder
     Get-PSDrive -PSProvider FileSystem | ForEach-Object {
         $forensicFlag = Join-Path $_.Root 'FORENSIC_MODE'
-        if (Test-Path $forensicFlag) { return }
+        if (Test-Path $forensicFlag) {
+            try {
+                $dl = $_.Root.TrimEnd('\').TrimEnd(':')
+                $p = Get-Partition -DriveLetter $dl -ErrorAction Stop
+                Set-Disk -Number $p.DiskNumber -IsReadOnly $true -ErrorAction SilentlyContinue
+            } catch { }
+            return
+        }
         $candidate = Join-Path $_.Root 'DFIR-Updater\DFIR-Updater-GUI.ps1'
         if (Test-Path $candidate) { & $candidate; break }
     }

@@ -33,6 +33,13 @@ if (-not (Test-Path $script:ConfigPath)) {
 $script:UserAgent    = 'DFIR-Updater/1.0 (PowerShell)'
 $script:TempRoot     = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'DFIR-Updater')
 
+# Ensure TLS 1.2 is available for HTTPS requests
+try {
+    [System.Net.ServicePointManager]::SecurityProtocol =
+        [System.Net.ServicePointManager]::SecurityProtocol -bor
+        [System.Net.SecurityProtocolType]::Tls12
+} catch { }
+
 # ---------------------------------------------------------------------------
 # 1. Get-ToolConfig
 # ---------------------------------------------------------------------------
@@ -286,9 +293,9 @@ function Compare-Versions {
         return $false
     }
 
-    # Strip leading "v" or "V"
-    $current = $CurrentVersion -replace '^[vV]', ''
-    $latest  = $LatestVersion  -replace '^[vV]', ''
+    # Strip leading "v" or "V" and normalize hyphens to dots (e.g. "3-0" → "3.0")
+    $current = ($CurrentVersion -replace '^[vV]', '') -replace '-', '.'
+    $latest  = ($LatestVersion  -replace '^[vV]', '') -replace '-', '.'
 
     # Split into numeric segments; treat non-numeric segments as 0
     $currentParts = $current.Split('.') | ForEach-Object {
@@ -316,6 +323,118 @@ function Compare-Versions {
 
     # Versions are identical
     return $false
+}
+
+# ---------------------------------------------------------------------------
+# 3b. Get-WebLatestVersion
+# ---------------------------------------------------------------------------
+function Get-WebLatestVersion {
+    <#
+    .SYNOPSIS
+        Scrapes a web page for the latest version number using a regex pattern.
+
+    .DESCRIPTION
+        Downloads the HTML content of a URL and applies a regex pattern to find
+        version strings. Returns the highest version found. Useful for tools
+        that do not publish GitHub releases but display version info on their
+        download page (e.g. NirSoft, exiftool.org, nmap.org).
+
+    .PARAMETER Url
+        The URL to fetch and search for version information.
+
+    .PARAMETER VersionPattern
+        Regex pattern with a capture group for the version string.
+        e.g. 'exiftool-([\d.]+)' or 'nmap-([\d.]+)-setup\.exe'
+
+    .OUTPUTS
+        PSCustomObject with Version (string or $null) and Error (string or $null).
+
+    .EXAMPLE
+        Get-WebLatestVersion -Url 'https://exiftool.org' -VersionPattern 'exiftool-([\d.]+)'
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Url,
+
+        [Parameter(Mandatory)]
+        [string]$VersionPattern
+    )
+
+    Write-Verbose "Scraping '$Url' for version pattern: $VersionPattern"
+
+    $html = $null
+    try {
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 10 `
+                        -UserAgent $script:UserAgent -ErrorAction Stop
+        $html = $response.Content
+    }
+    catch {
+        Write-Warning "Failed to fetch '$Url': $_"
+        return [PSCustomObject]@{
+            Version = $null
+            Error   = "Fetch failed: $($_.Exception.Message)"
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($html)) {
+        return [PSCustomObject]@{
+            Version = $null
+            Error   = 'Empty response from server.'
+        }
+    }
+
+    # Find all version matches in the page
+    $regexMatches = [regex]::Matches($html, $VersionPattern)
+    if ($regexMatches.Count -eq 0) {
+        return [PSCustomObject]@{
+            Version = $null
+            Error   = 'No version match found on page.'
+        }
+    }
+
+    # Extract unique version strings from capture group 1
+    $versions = @{}
+    foreach ($m in $regexMatches) {
+        if ($m.Groups.Count -gt 1 -and $m.Groups[1].Value) {
+            $ver = $m.Groups[1].Value
+            if (-not $versions.ContainsKey($ver)) {
+                $versions[$ver] = $true
+            }
+        }
+    }
+
+    if ($versions.Count -eq 0) {
+        return [PSCustomObject]@{
+            Version = $null
+            Error   = 'Pattern matched but no capture group found.'
+        }
+    }
+
+    # Sort versions descending and return the highest
+    $sorted = @($versions.Keys) | Sort-Object {
+        $normalized = ($_ -replace '-', '.').Split('.')
+        $padded = @()
+        foreach ($p in $normalized) {
+            $n = 0
+            if ([int]::TryParse($p, [ref]$n)) {
+                $padded += $n.ToString().PadLeft(10, '0')
+            } else {
+                $padded += $p.PadLeft(10, '0')
+            }
+        }
+        while ($padded.Count -lt 5) { $padded += '0000000000' }
+        $padded -join '.'
+    } -Descending
+
+    $highest = $sorted | Select-Object -First 1
+
+    Write-Verbose "Highest version found: $highest (from $($versions.Count) unique match(es))"
+
+    return [PSCustomObject]@{
+        Version = $highest
+        Error   = $null
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -423,9 +542,51 @@ function Get-AllUpdateStatus {
             }
 
             'web' {
-                $downloadUrl = $tool.download_url
-                $notes       = 'Web source - check manually for updates.'
-                $updateAvail = $null
+                $downloadUrl    = $tool.download_url
+                $versionPattern = $tool.version_pattern
+
+                # Prefer version_check_url over download_url for scraping
+                $checkUrl = $null
+                $checkUrlProp = $tool.PSObject.Properties['version_check_url']
+                if ($checkUrlProp -and $checkUrlProp.Value) {
+                    $checkUrl = $checkUrlProp.Value
+                } else {
+                    $checkUrl = $downloadUrl
+                }
+
+                # Attempt automated web scraping if we have a URL and regex pattern
+                if ($checkUrl -and $versionPattern) {
+                    $webResult = Get-WebLatestVersion -Url $checkUrl -VersionPattern $versionPattern
+
+                    if ($webResult.Version) {
+                        $latestVersion = $webResult.Version
+
+                        if ($currentVersion) {
+                            $updateAvail = Compare-Versions -CurrentVersion $currentVersion `
+                                                            -LatestVersion  $latestVersion
+                        } else {
+                            # Found latest but don't know current — can't compare
+                            $updateAvail = $null
+                            $notes = "Latest version found: $latestVersion. Current version unknown."
+                        }
+                    } else {
+                        # Scraping failed — fall back to manual
+                        $notes = "Auto-check failed ($($webResult.Error)). Check manually."
+                        $updateAvail = $null
+                    }
+                } else {
+                    # No pattern or URL available for scraping
+                    if (-not $currentVersion) {
+                        $notes = 'No current version recorded - check manually.'
+                    } elseif (-not $versionPattern) {
+                        $notes = 'No version pattern configured - check manually.'
+                    } elseif (-not $checkUrl) {
+                        $notes = 'No check URL available - check manually.'
+                    } else {
+                        $notes = 'Web source - check manually for updates.'
+                    }
+                    $updateAvail = $null
+                }
             }
 
             default {

@@ -7,9 +7,9 @@
     {
       "name": "Arsenal Image Mounter",
       "path": "01_Acquisition/Arsenal-Image-Mounter-v3.11.307",
-      "source_type": "web",
-      "github_repo": null,
-      "github_asset_pattern": null,
+      "source_type": "github",
+      "github_repo": "ArsenalRecon/Arsenal-Image-Mounter",
+      "github_asset_pattern": "Arsenal-Image-Mounter.*\\.zip",
       "download_url": "https://arsenalrecon.com/downloads",
       "current_version": "3.11.307",
       "version_pattern": "v([\\d.]+)",
@@ -31,9 +31,9 @@
     {
       "name": "Encrypted Disk Hunter",
       "path": "01_Acquisition/EncryptedDiskHunter_v1.10.exe",
-      "source_type": "web",
-      "github_repo": null,
-      "github_asset_pattern": null,
+      "source_type": "github",
+      "github_repo": "yourealwaysbe/EncryptedDiskHunter",
+      "github_asset_pattern": "EncryptedDiskHunter.*\\.exe",
       "download_url": "https://www.yourealwaysbe.com/encrypted-disk-hunter/",
       "current_version": "1.10",
       "version_pattern": "EncryptedDiskHunter_v([\\d.]+)\\.exe",
@@ -79,14 +79,14 @@
     {
       "name": "ExifTool",
       "path": "02_Analysis/exiftool-13.28_64",
-      "source_type": "web",
-      "github_repo": null,
+      "source_type": "github",
+      "github_repo": "exiftool/exiftool",
       "github_asset_pattern": null,
       "download_url": "https://exiftool.org",
       "current_version": "13.28",
       "version_pattern": "exiftool-([\\d.]+)",
       "install_type": "extract_zip",
-      "notes": "Windows standalone executable distributed as zip. Also available directly from exiftool.org. GitHub releases mirror the official site. The _64 suffix indicates 64-bit Windows build."
+      "notes": "Windows standalone executable distributed as zip. GitHub repo used for version checking; download the Windows build from exiftool.org. The _64 suffix indicates 64-bit Windows build."
     },
     {
       "name": "HashMyFiles",
@@ -138,27 +138,27 @@
     },
     {
       "name": "NetworkMiner",
-      "path": "03_Network/NetworkMiner_3-0",
+      "path": "03_Network/NetworkMiner_3-1",
       "source_type": "web",
       "github_repo": null,
       "github_asset_pattern": null,
       "download_url": "https://www.netresec.com/?page=NetworkMiner",
-      "current_version": "3.0",
+      "current_version": "3.1",
       "version_pattern": "NetworkMiner[_-]([\\d-]+)",
       "install_type": "extract_zip",
-      "notes": "Free edition available from Netresec. Download as zip and extract. Version in folder name uses hyphens (3-0 = 3.0). Check netresec.com for latest version. Direct download link changes with each release."
+      "notes": "Free edition available from Netresec. Download as zip and extract. Version in folder name uses hyphens (3-1 = 3.1). Check netresec.com for latest version. Direct download link changes with each release."
     },
     {
       "name": "Nmap",
-      "path": "03_Network/nmap-7.95-setup.exe",
+      "path": "03_Network/nMAP",
       "source_type": "web",
-      "github_repo": "nmap/nmap",
-      "github_asset_pattern": "nmap-[\\d.]+-setup\\.exe",
+      "github_repo": null,
+      "github_asset_pattern": null,
       "download_url": "https://nmap.org/download.html",
-      "current_version": "7.95",
-      "version_pattern": "nmap-([\\d.]+)-setup\\.exe",
-      "install_type": "manual",
-      "notes": "Windows installer EXE from nmap.org. GitHub repo exists (nmap/nmap) but releases are primarily on nmap.org. Direct download pattern: https://nmap.org/dist/nmap-<version>-setup.exe. Installer requires running the setup wizard."
+      "current_version": "7.98",
+      "version_pattern": "nmap-([\\d.]+)",
+      "install_type": "extract_zip",
+      "notes": "Portable deployment in nMAP folder. Download the portable zip (nmap-<version>-win32.zip) from nmap.org/dist/ and extract. Version auto-checked from nmap.org download page."
     },
     {
       "name": "UniGetUI",

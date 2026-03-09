@@ -196,7 +196,7 @@ try {
     $request = [System.Net.WebRequest]::Create('https://api.github.com')
     $request.Timeout = 8000
     $request.Method  = 'HEAD'
-    $request.Headers.Add('User-Agent', 'DFIR-Updater/1.0')
+    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'DFIR-Updater/1.0' }
     $response = $request.GetResponse()
     $response.Close()
     $githubOk = $true

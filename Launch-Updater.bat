@@ -8,19 +8,11 @@ setlocal EnableDelayedExpansion
 
 title DFIR Drive Updater
 
-:: ---- Forensic Mode Check ----
+:: ---- Forensic Mode Notice ----
 if exist "%~d0\FORENSIC_MODE" (
+    echo  [!] Forensic Mode is active. Updates are disabled.
+    echo      You can toggle it from the GUI.
     echo.
-    echo  ============================================================
-    echo   FORENSIC MODE IS ACTIVE
-    echo  ============================================================
-    echo.
-    echo   Updater is blocked to protect target system integrity.
-    echo.
-    echo   Run Forensic-Mode.bat to disable.
-    echo.
-    pause
-    exit /b 0
 )
 
 :: ---- Derive paths from this script's location ----
