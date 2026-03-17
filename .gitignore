@@ -34,6 +34,18 @@ ehthumbs.db
 # ── Log files ────────────────────────────────────────────────────────────────
 *.log
 
+# ── Exported reports/CSV files ─────────────────────────────────────────────
+exports/
+
+# ── Build output ───────────────────────────────────────────────────────────
+dist/
+
+# ── Forensic reports (machine-specific) ───────────────────────────────────
+forensic-reports/
+
+# ── Claude Code local config ──────────────────────────────────────────────
+.claude/
+
 # ── Forensic Mode artifacts ──────────────────────────────────────────────────
 # Cleanup reports are machine-specific and should not be tracked
 cleanup-reports/

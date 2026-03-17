@@ -15,29 +15,36 @@ Set-StrictMode -Version Latest
 # Maps relative path prefix -> array of {Name, ExeRelPath}
 # ---------------------------------------------------------------------------
 $script:KnownTools = @(
+    # ── 01_Acquisition (GUI tools only) ─────────────────────────────────────
     @{ Name = 'Arsenal Image Mounter';    Path = '01_Acquisition/Arsenal-Image-Mounter'; Exe = 'ArsenalImageMounter.exe' }
     @{ Name = 'Encrypted Disk Detector';  Path = '01_Acquisition/EncryptedDiskDetector';  Exe = 'EDDv310.exe' }
+    @{ Name = 'Encrypted Disk Hunter';    Path = '01_Acquisition';                        Exe = 'EncryptedDiskHunter_v1.10.exe' }
     @{ Name = 'FTK Imager';              Path = '01_Acquisition/FTK Imager';             Exe = 'FTK Imager.exe' }
-    @{ Name = 'KAPE (GUI)';              Path = '01_Acquisition/KAPE';                   Exe = 'kape/KAPE/gkape.exe' }
-    @{ Name = 'KAPE (CLI)';              Path = '01_Acquisition/KAPE';                   Exe = 'kape/KAPE/kape.exe' }
+    @{ Name = 'AD Encrypt';              Path = '01_Acquisition/FTK Imager';             Exe = 'adencrypt_gui.exe' }
+    @{ Name = 'KAPE (GUI)';              Path = '01_Acquisition/KAPE';                   Exe = 'gkape.exe' }
+    @{ Name = 'Magnet RAM Capture';      Path = '01_Acquisition';                        Exe = 'MagnetRAMCapture_v120.exe' }
+
+    # ── 02_Analysis ─────────────────────────────────────────────────────────
     @{ Name = 'ExifTool';                Path = '02_Analysis/exiftool';                  Exe = 'exiftool(-k).exe' }
-    @{ Name = 'hashcat';                 Path = '02_Analysis/hashcat';                   Exe = 'hashcat.exe' }
     @{ Name = 'HashMyFiles';             Path = '02_Analysis/HashMyFiles';               Exe = 'HashMyFiles.exe' }
+    @{ Name = 'Hash Value Tool';         Path = '02_Analysis';                           Exe = 'HashValueTool.exe' }
     @{ Name = 'PhotoRec (GUI)';          Path = '02_Analysis/PhotoREC';                  Exe = 'qphotorec_win.exe' }
     @{ Name = 'PhotoRec (CLI)';          Path = '02_Analysis/PhotoREC';                  Exe = 'photorec_win.exe' }
     @{ Name = 'TestDisk';                Path = '02_Analysis/PhotoREC';                  Exe = 'testdisk_win.exe' }
-    @{ Name = 'Timeline Explorer';       Path = '02_Analysis/TimelineExplorer';          Exe = 'TimelineExplorer.exe' }
-    @{ Name = 'NetworkMiner';            Path = '03_Network/NetworkMiner';               Exe = 'NetworkMiner.exe' }
-    @{ Name = 'Nmap';                    Path = '03_Network/nMAP';                       Exe = 'nmap.exe' }
-    @{ Name = 'Zenmap (Nmap GUI)';       Path = '03_Network/nMAP';                       Exe = 'Zenmap.bat' }
-    @{ Name = 'Network Diagnostic Tool'; Path = '03_Network';                            Exe = 'NetworkDiagnosticTool-GUI 1.0.0.145.exe' }
-    @{ Name = 'Cellebrite WRAT';         Path = '04_Mobile-Forensics/WarrantReturnAutomationTool'; Exe = 'CellebriteWarrantReturnAutomationTool.exe' }
-    @{ Name = 'UniGetUI';                Path = '08_Utilities/UniGetUI';                 Exe = 'UniGetUI.exe' }
-    @{ Name = 'Encrypted Disk Hunter';   Path = '01_Acquisition';                        Exe = 'EncryptedDiskHunter_v1.10.exe' }
-    @{ Name = 'Magnet RAM Capture';      Path = '01_Acquisition';                        Exe = 'MagnetRAMCapture_v120.exe' }
-    @{ Name = 'HP USB Disk Format Tool'; Path = '01_Acquisition';                        Exe = 'HPUSBDisk.exe' }
-    @{ Name = 'Hash Value Tool';         Path = '02_Analysis';                           Exe = 'HashValueTool.exe' }
     @{ Name = 'TimeApp';                 Path = '02_Analysis';                           Exe = 'TimeApp.exe' }
+    @{ Name = 'Timeline Explorer';       Path = '02_Analysis/TimelineExplorer';          Exe = 'TimelineExplorer.exe' }
+
+    # ── 03_Network ──────────────────────────────────────────────────────────
+    @{ Name = 'NetworkMiner';            Path = '03_Network/NetworkMiner';               Exe = 'NetworkMiner.exe' }
+    @{ Name = 'Network Diagnostic Tool'; Path = '03_Network';                            Exe = 'NetworkDiagnosticTool-GUI 1.0.0.145.exe' }
+
+    # ── 04_Mobile-Forensics ─────────────────────────────────────────────────
+    @{ Name = 'ALEAPP (GUI)';            Path = '04_Mobile-Forensics/aLEAPP/ALEAPP-main'; Exe = 'aleappGUI.py' }
+    @{ Name = 'iLEAPP (GUI)';            Path = '04_Mobile-Forensics/iLEAPP/iLEAPP-main'; Exe = 'ileappGUI.py' }
+    @{ Name = 'Cellebrite WRAT';         Path = '04_Mobile-Forensics/WarrantReturnAutomationTool'; Exe = 'CellebriteWarrantReturnAutomationTool.exe' }
+
+    # ── 08_Utilities ────────────────────────────────────────────────────────
+    @{ Name = 'UniGetUI';                Path = '08_Utilities/UniGetUI';                 Exe = 'UniGetUI.exe' }
 )
 
 # ---------------------------------------------------------------------------
@@ -185,11 +192,13 @@ function Get-LaunchableTools {
         $catDir = Join-Path $DriveRoot $prefix
         if (-not (Test-Path -LiteralPath $catDir -PathType Container)) { continue }
 
-        # Direct exe files in category root
+        # Direct exe files in category root (skip CLI-only tools)
         $directExes = @(Get-ChildItem -Path $catDir -Filter '*.exe' -File -ErrorAction SilentlyContinue)
         foreach ($exe in $directExes) {
             $key = $exe.FullName.ToLower()
             if ($seenExes.ContainsKey($key)) { continue }
+            # Skip known CLI-only / non-GUI executables
+            if ($exe.Name -match '^(HPUSBDisk|aim_cli|kape|ADIso)\.exe$') { continue }
             $seenExes[$key] = $true
 
             $name = $exe.BaseName -replace '_v?\d+[\d.]*$', '' -replace '_', ' '
@@ -206,6 +215,8 @@ function Get-LaunchableTools {
         $subDirs = @(Get-ChildItem -Path $catDir -Directory -ErrorAction SilentlyContinue)
         foreach ($subDir in $subDirs) {
             if ($knownDirs.ContainsKey($subDir.FullName.ToLower())) { continue }
+            # Skip backup, test, source-distribution, and CLI-only tool directories
+            if ($subDir.Name -match '\.bak|\.old|\.backup|^Image-ExifTool|^__|^hashcat|^nMAP$') { continue }
 
             # For unknown subdirectories, pick only the primary exe
             # Heuristic: prefer exe matching folder name, else largest exe

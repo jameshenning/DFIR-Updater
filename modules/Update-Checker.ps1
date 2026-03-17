@@ -519,8 +519,23 @@ function Get-AllUpdateStatus {
                 $release = Get-GitHubLatestRelease @releaseParams
 
                 if ($release.Error) {
-                    $notes = "GitHub API error: $($release.Error)"
-                    $updateAvail = $null
+                    # GitHub API failed — try web fallback if tool has a download page and version pattern
+                    if ($tool.download_url -and $tool.version_pattern) {
+                        $webFallback = Get-WebLatestVersion -Url $tool.download_url -VersionPattern $tool.version_pattern
+                        if ($webFallback.Version) {
+                            $latestVersion = $webFallback.Version
+                            $updateAvail   = Compare-Versions -CurrentVersion $currentVersion `
+                                                              -LatestVersion  $latestVersion
+                            $downloadUrl   = $tool.download_url
+                            $notes         = "Checked via web (GitHub unavailable)."
+                        } else {
+                            $notes = "GitHub API error: $($release.Error)"
+                            $updateAvail = $null
+                        }
+                    } else {
+                        $notes = "GitHub API error: $($release.Error)"
+                        $updateAvail = $null
+                    }
                 }
                 else {
                     $latestVersion = $release.TagName
@@ -568,6 +583,12 @@ function Get-AllUpdateStatus {
                             # Found latest but don't know current — can't compare
                             $updateAvail = $null
                             $notes = "Latest version found: $latestVersion. Current version unknown."
+                        }
+
+                        # Build download URL from template if available
+                        $templateProp = $tool.PSObject.Properties['download_url_template']
+                        if ($templateProp -and $templateProp.Value -and $latestVersion) {
+                            $downloadUrl = $templateProp.Value -replace '\{version\}', $latestVersion
                         }
                     } else {
                         # Scraping failed — fall back to manual
@@ -661,7 +682,7 @@ function Install-ToolUpdate {
         [string]$InstallPath,
 
         [Parameter(Mandatory)]
-        [ValidateSet('extract_zip', 'copy_exe', 'manual')]
+        [ValidateSet('extract_zip', 'extract_7z', 'copy_exe', 'manual')]
         [string]$InstallType
     )
 
@@ -749,23 +770,57 @@ function Install-ToolUpdate {
     }
 
     # ------------------------------------------------------------------
-    # Backup existing installation
+    # Backup existing installation (move, not copy — avoids duplicates)
     # ------------------------------------------------------------------
     $backupPath = "$InstallPath.bak_$timestamp"
     if (Test-Path -LiteralPath $InstallPath) {
         Write-Verbose "Backing up existing installation: '$InstallPath' -> '$backupPath'"
         try {
-            if (Test-Path -LiteralPath $InstallPath -PathType Container) {
-                Copy-Item -LiteralPath $InstallPath -Destination $backupPath `
-                          -Recurse -Force -ErrorAction Stop
-            }
-            else {
-                Copy-Item -LiteralPath $InstallPath -Destination $backupPath `
-                          -Force -ErrorAction Stop
-            }
+            Rename-Item -LiteralPath $InstallPath -NewName (Split-Path $backupPath -Leaf) `
+                        -Force -ErrorAction Stop
         }
         catch {
             return New-Result $false "Backup failed for '$ToolName': $_"
+        }
+    }
+
+    # ------------------------------------------------------------------
+    # Helper: flatten single nested folder after extraction
+    #   Many ZIPs contain a single root folder (e.g., exiftool-13.52_64/).
+    #   Move its contents up so tools live directly in $InstallPath.
+    # ------------------------------------------------------------------
+    function Resolve-NestedFolder ([string]$Path) {
+        $items = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)
+        if ($items.Count -eq 1 -and $items[0].PSIsContainer) {
+            $nested = $items[0].FullName
+            Write-Verbose "Flattening nested folder: '$nested' -> '$Path'"
+            # Rename within $Path so it stays as a child of $Path
+            $tempName = "_flatten_$([guid]::NewGuid().ToString('N').Substring(0,8))"
+            $tempMove = Join-Path $Path $tempName
+            Rename-Item -LiteralPath $nested -NewName $tempName -Force
+            # Move all contents from the temp folder up into $Path
+            Get-ChildItem -LiteralPath $tempMove -Force | ForEach-Object {
+                Move-Item -LiteralPath $_.FullName -Destination $Path -Force
+            }
+            Remove-Item -LiteralPath $tempMove -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # ------------------------------------------------------------------
+    # Helper: clean up old .bak_ directories (keep only the latest)
+    # ------------------------------------------------------------------
+    function Remove-OldBackups ([string]$BasePath) {
+        $parentDir  = Split-Path $BasePath -Parent
+        $baseName   = Split-Path $BasePath -Leaf
+        $bakPattern = "$baseName.bak_*"
+        $backups = @(Get-ChildItem -LiteralPath $parentDir -Filter $bakPattern -Directory -ErrorAction SilentlyContinue |
+                     Sort-Object Name -Descending)
+        # Keep only the most recent backup, remove the rest
+        if ($backups.Count -gt 1) {
+            foreach ($old in $backups[1..($backups.Count - 1)]) {
+                Write-Verbose "Removing old backup: '$($old.FullName)'"
+                Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
@@ -776,19 +831,79 @@ function Install-ToolUpdate {
         'extract_zip' {
             Write-Verbose "Extracting '$tempFile' -> '$InstallPath'"
             try {
-                if (-not (Test-Path -LiteralPath $InstallPath)) {
-                    New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
-                }
+                # Create a clean target directory
+                New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
 
-                # Use Expand-Archive; -Force overwrites existing files
                 Expand-Archive -LiteralPath $tempFile -DestinationPath $InstallPath `
                                -Force -ErrorAction Stop
 
+                # Flatten if the ZIP contained a single root folder
+                Resolve-NestedFolder $InstallPath
+
+                # Clean up old backups (keep only the latest)
+                Remove-OldBackups $InstallPath
+
                 Write-Verbose "Extraction complete for '$ToolName'."
-                return New-Result $true "Successfully updated '$ToolName' (extract_zip) to '$InstallPath'. Backup at '$backupPath'."
+                return New-Result $true "Successfully updated '$ToolName' (extract_zip)."
             }
             catch {
                 # Attempt rollback
+                Write-Warning "Extraction failed for '$ToolName'. Attempting rollback."
+                if (Test-Path -LiteralPath $backupPath) {
+                    try {
+                        Remove-Item -LiteralPath $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
+                        Rename-Item -LiteralPath $backupPath -NewName (Split-Path $InstallPath -Leaf) -ErrorAction Stop
+                    }
+                    catch {
+                        Write-Warning "Rollback also failed: $_"
+                    }
+                }
+                return New-Result $false "Extraction failed for '$ToolName': $_"
+            }
+            finally {
+                Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        'extract_7z' {
+            Write-Verbose "Extracting 7z archive '$tempFile' -> '$InstallPath'"
+            try {
+                # Create a clean target directory
+                New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
+
+                # Try 7z.exe from common locations
+                $sevenZip = Get-Command '7z' -ErrorAction SilentlyContinue
+                if (-not $sevenZip) {
+                    $sevenZip = @(
+                        "$env:ProgramFiles\7-Zip\7z.exe",
+                        "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+                    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+                }
+
+                if ($sevenZip) {
+                    $szPath = if ($sevenZip -is [System.Management.Automation.CommandInfo]) { $sevenZip.Source } else { $sevenZip }
+                    $proc = Start-Process -FilePath $szPath `
+                        -ArgumentList "x `"$tempFile`" -o`"$InstallPath`" -y" `
+                        -Wait -PassThru -NoNewWindow -ErrorAction Stop
+                    if ($proc.ExitCode -ne 0) {
+                        throw "7z exited with code $($proc.ExitCode)"
+                    }
+                } else {
+                    # Fallback: try Expand-Archive in case file is actually a zip
+                    Expand-Archive -LiteralPath $tempFile -DestinationPath $InstallPath `
+                                   -Force -ErrorAction Stop
+                }
+
+                # Flatten if the archive contained a single root folder
+                Resolve-NestedFolder $InstallPath
+
+                # Clean up old backups (keep only the latest)
+                Remove-OldBackups $InstallPath
+
+                Write-Verbose "Extraction complete for '$ToolName'."
+                return New-Result $true "Successfully updated '$ToolName' (extract_7z)."
+            }
+            catch {
                 Write-Warning "Extraction failed for '$ToolName'. Attempting rollback."
                 if (Test-Path -LiteralPath $backupPath) {
                     try {
@@ -817,8 +932,11 @@ function Install-ToolUpdate {
                 Copy-Item -LiteralPath $tempFile -Destination $InstallPath `
                           -Force -ErrorAction Stop
 
+                # Clean up old backups for this file (keep only latest)
+                Remove-OldBackups $InstallPath
+
                 Write-Verbose "Copy complete for '$ToolName'."
-                return New-Result $true "Successfully updated '$ToolName' (copy_exe) to '$InstallPath'. Backup at '$backupPath'."
+                return New-Result $true "Successfully updated '$ToolName' (copy_exe)."
             }
             catch {
                 # Attempt rollback

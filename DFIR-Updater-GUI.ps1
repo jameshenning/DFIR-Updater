@@ -40,20 +40,67 @@ if (-not $script:DriveRoot -or -not (Test-Path $script:DriveRoot)) {
 $script:ForensicModeFile = Join-Path $script:DriveRoot 'FORENSIC_MODE'
 $script:ForensicModeActive = Test-Path -LiteralPath $script:ForensicModeFile
 
+# ─── Debug Log Setup ────────────────────────────────────────────────────────
+$script:DebugLogPath = Join-Path $script:ScriptDir "debug.log"
+$script:DebugLogMaxBytes = 2 * 1024 * 1024   # 2 MB max before rotation
+
+# Rotate if the log file is too large
+if (Test-Path -LiteralPath $script:DebugLogPath) {
+    try {
+        $logSize = (Get-Item -LiteralPath $script:DebugLogPath -ErrorAction Stop).Length
+        if ($logSize -gt $script:DebugLogMaxBytes) {
+            $backupPath = $script:DebugLogPath + '.old'
+            if (Test-Path -LiteralPath $backupPath) { Remove-Item -LiteralPath $backupPath -Force }
+            Rename-Item -LiteralPath $script:DebugLogPath -NewName (Split-Path $backupPath -Leaf) -Force
+        }
+    } catch { }
+}
+
+function Write-DebugLog {
+    param(
+        [string]$Message,
+        [ValidateSet('INFO','WARN','ERROR','DEBUG')]
+        [string]$Level = 'INFO'
+    )
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
+    $caller = ''
+    $callStack = Get-PSCallStack
+    if ($callStack.Count -ge 2) {
+        $frame = $callStack[1]
+        $caller = " [$($frame.FunctionName):$($frame.ScriptLineNumber)]"
+    }
+    $line = "$ts [$Level]$caller $Message"
+    try {
+        [System.IO.File]::AppendAllText($script:DebugLogPath, "$line`r`n")
+    } catch { }
+}
+
+# Session header
+Write-DebugLog "═══════════════════════════════════════════════════════════════" 'INFO'
+Write-DebugLog "DFIR-Updater session started" 'INFO'
+Write-DebugLog "PowerShell $($PSVersionTable.PSVersion) | OS $([System.Environment]::OSVersion.VersionString)" 'INFO'
+Write-DebugLog "ScriptDir: $script:ScriptDir | DriveRoot: $script:DriveRoot" 'INFO'
+Write-DebugLog "═══════════════════════════════════════════════════════════════" 'INFO'
+
 $script:ModulePath          = Join-Path $script:ScriptDir "modules\Update-Checker.ps1"
 $script:AutoDiscoveryPath   = Join-Path $script:ScriptDir "modules\Auto-Discovery.ps1"
 $script:ToolLauncherPath    = Join-Path $script:ScriptDir "modules\Tool-Launcher.ps1"
+$script:PkgManagerPath      = Join-Path $script:ScriptDir "modules\Package-Manager.ps1"
 $script:ConfigPath          = Join-Path $script:ScriptDir "tools-config.json"
 $script:HasModule           = Test-Path $script:ModulePath
 $script:HasAutoDiscovery    = Test-Path $script:AutoDiscoveryPath
 $script:HasToolLauncher     = Test-Path $script:ToolLauncherPath
+$script:HasPkgManager       = Test-Path $script:PkgManagerPath
 
 # ─── Dot-source the update-checker backend ───────────────────────────────────
+Write-DebugLog "Modules: Update-Checker=$($script:HasModule) AutoDiscovery=$($script:HasAutoDiscovery) ToolLauncher=$($script:HasToolLauncher) PkgManager=$($script:HasPkgManager)" 'DEBUG'
 if ($script:HasModule) {
     . $script:ModulePath
+    Write-DebugLog "Loaded Update-Checker module" 'DEBUG'
 } else {
     Write-Warning "Update-Checker module not found at: $script:ModulePath"
     Write-Warning "Running in UI-preview mode with sample data."
+    Write-DebugLog "Update-Checker module NOT FOUND - preview mode" 'WARN'
 }
 
 # The module sets Set-StrictMode -Version Latest which propagates to this scope
@@ -68,6 +115,12 @@ if ($script:HasAutoDiscovery) {
 # ─── Dot-source the tool launcher module (optional) ──────────────────────────
 if ($script:HasToolLauncher) {
     . $script:ToolLauncherPath
+    Set-StrictMode -Off
+}
+
+# ─── Dot-source the package manager module (optional) ────────────────────────
+if ($script:HasPkgManager) {
+    . $script:PkgManagerPath
     Set-StrictMode -Off
 }
 
@@ -377,9 +430,10 @@ public class ToolItem : INotifyPropertyChanged
             <!-- Sidebar -->
             <Border Grid.Column="0" Background="#1B1B1F" BorderBrush="#3E3E3E" BorderThickness="0,0,1,0">
                 <StackPanel VerticalAlignment="Top">
-                    <Button x:Name="btnNavDashboard" Content="&#x1F3E0;" Style="{StaticResource NavButton}" ToolTip="Dashboard" Tag="Active"/>
-                    <Button x:Name="btnNavUpdates"   Content="&#x1F504;" Style="{StaticResource NavButton}" ToolTip="Update Center"/>
-                    <Button x:Name="btnNavSettings"  Content="&#x2699;"  Style="{StaticResource NavButton}" ToolTip="Settings"/>
+                    <Button x:Name="btnNavDashboard"  Content="&#x1F3E0;" Style="{StaticResource NavButton}" ToolTip="Dashboard" Tag="Active"/>
+                    <Button x:Name="btnNavUpdates"    Content="&#x1F504;" Style="{StaticResource NavButton}" ToolTip="Update Center"/>
+                    <Button x:Name="btnNavReferences" Content="&#x1F517;" Style="{StaticResource NavButton}" ToolTip="Linux/macOS References"/>
+                    <Button x:Name="btnNavSettings"   Content="&#x2699;"  Style="{StaticResource NavButton}" ToolTip="Settings"/>
                 </StackPanel>
             </Border>
 
@@ -402,7 +456,10 @@ public class ToolItem : INotifyPropertyChanged
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Tools" FontSize="16" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" Margin="4,0,16,0"/>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,16,0">
+                                <TextBlock Text="Tools" FontSize="16" FontWeight="SemiBold" Foreground="White"/>
+                                <TextBlock x:Name="txtDashToolCount" Text="" FontSize="12" Foreground="#888888" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </StackPanel>
                             <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                 <StackPanel x:Name="pnlDashCategories" Orientation="Horizontal" VerticalAlignment="Center"/>
                             </ScrollViewer>
@@ -412,14 +469,8 @@ public class ToolItem : INotifyPropertyChanged
                     </Border>
 
                     <!-- Scrollable tile area -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="#1E1E1E" Padding="12">
-                        <ItemsControl x:Name="icDashTools">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                        </ItemsControl>
+                    <ScrollViewer x:Name="svDashTools" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="#1E1E1E" Padding="12">
+                        <WrapPanel x:Name="wpDashTools" Orientation="Horizontal"/>
                     </ScrollViewer>
                 </Grid>
 
@@ -434,12 +485,17 @@ public class ToolItem : INotifyPropertyChanged
                     <Border Grid.Row="0" Background="#252526" Padding="12,8" BorderBrush="#3E3E3E" BorderThickness="0,0,0,1">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button x:Name="btnCancelUpdate" Content="&#x274C; Cancel" Style="{StaticResource ActionButton}" Visibility="Collapsed"
+                                        Foreground="#FF6B6B" BorderBrush="#CC4444"/>
+                                <Button x:Name="btnRetryFailed" Content="&#x1F504; Retry Failed" Style="{StaticResource ActionButton}" Visibility="Collapsed"
+                                        Foreground="#FFE066" BorderBrush="#B8A000"/>
                                 <Button x:Name="btnRefresh" Content="&#x1F504; Check for Updates" Style="{StaticResource ActionButton}"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">
+                                <Button x:Name="btnUpdateAll" Content="&#x26A1; Update All" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"/>
                                 <Button x:Name="btnSelectUpdates" Content="Select All Updates" Style="{StaticResource ActionButton}"/>
                                 <Button x:Name="btnDeselectAll"    Content="Deselect All"       Style="{StaticResource ActionButton}"/>
-                                <Button x:Name="btnUpdateSelected" Content="Update Selected"    Style="{StaticResource PrimaryButton}"/>
+                                <Button x:Name="btnUpdateSelected" Content="Update Selected"    Style="{StaticResource ActionButton}"/>
                             </StackPanel>
                         </DockPanel>
                     </Border>
@@ -496,6 +552,16 @@ public class ToolItem : INotifyPropertyChanged
                                 <Setter Property="Background" Value="#1E1E1E"/>
                                 <Setter Property="BorderBrush" Value="#2E2E2E"/>
                                 <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                <Setter Property="ToolTip">
+                                    <Setter.Value>
+                                        <MultiBinding StringFormat="{}{0}&#x0a;Path: {1}&#x0a;Install: {2}&#x0a;{3}">
+                                            <Binding Path="Name"/>
+                                            <Binding Path="ToolPath"/>
+                                            <Binding Path="InstallType"/>
+                                            <Binding Path="Notes"/>
+                                        </MultiBinding>
+                                    </Setter.Value>
+                                </Setter>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding StatusKey}" Value="UpToDate">
                                         <Setter Property="Background" Value="#1C2E1C"/>
@@ -510,7 +576,7 @@ public class ToolItem : INotifyPropertyChanged
                                         <Setter Property="Background" Value="#1E1E1E"/>
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding StatusKey}" Value="Error">
-                                        <Setter Property="Background" Value="#2E1C1C"/>
+                                        <Setter Property="Background" Value="#331C1C"/>
                                     </DataTrigger>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter Property="Background" Value="#333340"/>
@@ -531,6 +597,7 @@ public class ToolItem : INotifyPropertyChanged
 
                             <DataGridTextColumn Header="Tool Name"       Binding="{Binding Name}"           Width="*"    IsReadOnly="True"/>
                             <DataGridTextColumn Header="Category"        Binding="{Binding Category}"       Width="110"  IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Source"          Binding="{Binding SourceType}"     Width="65"   IsReadOnly="True"/>
                             <DataGridTextColumn Header="Current"         Binding="{Binding CurrentVersion}" Width="90"   IsReadOnly="True"/>
                             <DataGridTextColumn Header="Latest"          Binding="{Binding LatestVersion}"  Width="90"   IsReadOnly="True"/>
 
@@ -545,10 +612,10 @@ public class ToolItem : INotifyPropertyChanged
                                                         <Setter Property="Foreground" Value="#AAAAAA"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding StatusKey}" Value="UpToDate">
-                                                                <Setter Property="Foreground" Value="#6BCB77"/>
+                                                                <Setter Property="Foreground" Value="#7CDF8A"/>
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding StatusKey}" Value="UpdateAvailable">
-                                                                <Setter Property="Foreground" Value="#FFD93D"/>
+                                                                <Setter Property="Foreground" Value="#FFE066"/>
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding StatusKey}" Value="ManualCheck">
                                                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -603,6 +670,56 @@ public class ToolItem : INotifyPropertyChanged
                                                 </Button.Style>
                                             </Button>
                                         </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <!-- Per-row action button (UniGetUI-style) -->
+                            <DataGridTemplateColumn Header="" Width="80" CanUserResize="False" CanUserSort="False">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Tag="RowAction" Cursor="Hand" Padding="8,2" FontSize="11"
+                                                Background="#0078D4" Foreground="White" BorderThickness="0">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="actionBorder" CornerRadius="3"
+                                                            Background="{TemplateBinding Background}"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="actionBorder" Property="Background" Value="#1A8AD4"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsPressed" Value="True">
+                                                            <Setter TargetName="actionBorder" Property="Background" Value="#005A9E"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Setter Property="Content" Value="Update"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding StatusKey}" Value="UpdateAvailable">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <Setter Property="Content" Value="Update"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusKey}" Value="ManualCheck">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <Setter Property="Content" Value="Open"/>
+                                                            <Setter Property="Background" Value="#555555"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusKey}" Value="Error">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <Setter Property="Content" Value="Retry"/>
+                                                            <Setter Property="Background" Value="#8B4513"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -664,15 +781,83 @@ public class ToolItem : INotifyPropertyChanged
                                 </StackPanel>
                             </Border>
 
+                            <!-- Export Card -->
+                            <Border Background="#252526" CornerRadius="6" Padding="16" BorderBrush="#3E3E3E" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="Export" FontSize="16" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Export the tool inventory as a CSV file for documentation, auditing, or import into spreadsheets. Includes tool name, version, category, status, and paths." Foreground="#AAAAAA" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <Button x:Name="btnExportCsv" Content="Export Tool List (CSV)" Style="{StaticResource ActionButton}" HorizontalAlignment="Left"/>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Drive Information Card -->
                             <Border Background="#252526" CornerRadius="6" Padding="16" BorderBrush="#3E3E3E" BorderThickness="1" Margin="0,0,0,16">
                                 <StackPanel>
                                     <TextBlock Text="Drive Information" FontSize="16" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
                                     <TextBlock x:Name="txtDrivePathSettings" Text="Drive: " Foreground="#AAAAAA" FontSize="12" Margin="0,0,0,4"/>
-                                    <TextBlock x:Name="txtToolCountSettings" Text="Tools: " Foreground="#AAAAAA" FontSize="12"/>
+                                    <TextBlock x:Name="txtToolCountSettings" Text="Tools: " Foreground="#AAAAAA" FontSize="12" Margin="0,0,0,4"/>
+                                    <TextBlock x:Name="txtDriveSpaceSettings" Text="Space: " Foreground="#AAAAAA" FontSize="12" Margin="0,0,0,8"/>
+                                    <Button x:Name="btnOpenConfig" Content="Open tools-config.json" Style="{StaticResource ActionButton}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
+                                    <!-- Drive space bar -->
+                                    <Grid Height="8" Margin="0,0,0,4">
+                                        <Border Background="#3E3E3E" CornerRadius="4"/>
+                                        <Border x:Name="barDriveSpace" Background="#0078D4" CornerRadius="4" HorizontalAlignment="Left" Width="0"/>
+                                    </Grid>
+                                    <TextBlock x:Name="txtLastCheckedSettings" Text="" Foreground="#666666" FontSize="11" Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Border>
 
+                            <!-- Unblock Tools Card -->
+                            <Border Background="#252526" CornerRadius="6" Padding="16" BorderBrush="#3E3E3E" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="Unblock Tools" FontSize="16" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                                    <TextBlock Text="Remove Windows SmartScreen blocks (Mark of the Web) from all tool executables on the drive. Downloaded files are often blocked by Windows, preventing them from launching." Foreground="#AAAAAA" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <Button x:Name="btnUnblockAll" Content="Unblock All Tools" Style="{StaticResource ActionButton}" HorizontalAlignment="Left"/>
+                                    <TextBlock x:Name="txtUnblockResult" Text="" Foreground="#AAAAAA" FontSize="11" Margin="0,8,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Keyboard Shortcuts Card -->
+                            <Border Background="#252526" CornerRadius="6" Padding="16" BorderBrush="#3E3E3E" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="Keyboard Shortcuts" FontSize="16" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,10"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Ctrl+1" Foreground="#0078D4" FontFamily="Consolas" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Dashboard" Foreground="#AAAAAA" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Ctrl+2" Foreground="#0078D4" FontFamily="Consolas" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="Update Center" Foreground="#AAAAAA" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Ctrl+3" Foreground="#0078D4" FontFamily="Consolas" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="References" Foreground="#AAAAAA" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Ctrl+4" Foreground="#0078D4" FontFamily="Consolas" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="Settings" Foreground="#AAAAAA" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="F5 / Ctrl+R" Foreground="#0078D4" FontFamily="Consolas" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="4" Grid.Column="1" Text="Check for updates" Foreground="#AAAAAA" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Ctrl+F" Foreground="#0078D4" FontFamily="Consolas" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="5" Grid.Column="1" Text="Search tools" Foreground="#AAAAAA" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Ctrl+L" Foreground="#0078D4" FontFamily="Consolas" FontSize="12" Margin="0,2"/>
+                                        <TextBlock Grid.Row="6" Grid.Column="1" Text="Toggle log panel" Foreground="#AAAAAA" FontSize="12" Margin="0,2"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- ── Panel 4: Linux/macOS References ── -->
+                <Grid x:Name="panelReferences" Visibility="Collapsed">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="#1E1E1E" Padding="24,16">
+                        <StackPanel MaxWidth="700" HorizontalAlignment="Left">
+                            <TextBlock Text="Linux / macOS Tool Reference" FontSize="20" FontWeight="Bold" Foreground="White" Margin="0,0,0,4"/>
+                            <TextBlock Text="These DFIR tools run primarily on Linux or macOS. Click any tool name to open its project page in your browser." Foreground="#AAAAAA" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,20"/>
+                            <StackPanel x:Name="pnlLinuxTools"/>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
@@ -731,32 +916,50 @@ $dgTools           = $window.FindName("dgTools")
 $btnSelectUpdates  = $window.FindName("btnSelectUpdates")
 $btnDeselectAll    = $window.FindName("btnDeselectAll")
 $btnUpdateSelected = $window.FindName("btnUpdateSelected")
+$btnUpdateAll      = $window.FindName("btnUpdateAll")
 $btnRefresh        = $window.FindName("btnRefresh")
 $btnToggleLog      = $window.FindName("btnToggleLog")
 $btnForensicToggle = $window.FindName("btnForensicToggle")
+$btnCancelUpdate   = $window.FindName("btnCancelUpdate")
+$btnRetryFailed    = $window.FindName("btnRetryFailed")
 $logPanel          = $window.FindName("logPanel")
 $txtLog            = $window.FindName("txtLog")
+
+# Cancellation flag for update operations (thread-safe)
+$script:UpdateCancelRequested = $false
 
 # Navigation & panels
 $panelDashboard    = $window.FindName("panelDashboard")
 $panelUpdates      = $window.FindName("panelUpdates")
 $panelSettings     = $window.FindName("panelSettings")
+$panelReferences   = $window.FindName("panelReferences")
 $btnNavDashboard   = $window.FindName("btnNavDashboard")
 $btnNavUpdates     = $window.FindName("btnNavUpdates")
+$btnNavReferences  = $window.FindName("btnNavReferences")
 $btnNavSettings    = $window.FindName("btnNavSettings")
+$pnlLinuxTools     = $window.FindName("pnlLinuxTools")
 
 # Dashboard controls
 $pnlDashCategories = $window.FindName("pnlDashCategories")
-$icDashTools       = $window.FindName("icDashTools")
+$wpDashTools       = $window.FindName("wpDashTools")
+$svDashTools       = $window.FindName("svDashTools")
 $txtDashSearch     = $window.FindName("txtDashSearch")
+$txtDashToolCount  = $window.FindName("txtDashToolCount")
 $btnDashRefresh    = $window.FindName("btnDashRefresh")
 
 # Settings controls
 $btnForensicToggleSettings  = $window.FindName("btnForensicToggleSettings")
 $btnForensicReportSettings  = $window.FindName("btnForensicReportSettings")
 $btnScanNewToolsSettings    = $window.FindName("btnScanNewToolsSettings")
+$btnExportCsv               = $window.FindName("btnExportCsv")
+$btnOpenConfig              = $window.FindName("btnOpenConfig")
 $txtDrivePathSettings       = $window.FindName("txtDrivePathSettings")
 $txtToolCountSettings       = $window.FindName("txtToolCountSettings")
+$txtDriveSpaceSettings      = $window.FindName("txtDriveSpaceSettings")
+$barDriveSpace              = $window.FindName("barDriveSpace")
+$txtLastCheckedSettings     = $window.FindName("txtLastCheckedSettings")
+$btnUnblockAll              = $window.FindName("btnUnblockAll")
+$txtUnblockResult           = $window.FindName("txtUnblockResult")
 
 # ─── State ───────────────────────────────────────────────────────────────────
 $script:ToolItems = [System.Collections.ObjectModel.ObservableCollection[ToolItem]]::new()
@@ -764,14 +967,15 @@ $dgTools.ItemsSource = $script:ToolItems
 
 # ─── Category Map: derive display category from path prefix ─────────────────
 $script:CategoryMap = @{
-    '01_Acquisition' = 'Acquisition'
-    '02_Analysis'    = 'Analysis'
-    '03_Network'     = 'Network'
-    '04_Memory'      = 'Memory'
-    '05_Registry'    = 'Registry'
-    '06_Mobile'      = 'Mobile'
-    '07_Malware'     = 'Malware'
-    '08_Utilities'   = 'Utilities'
+    '01_Acquisition'      = 'Acquisition'
+    '02_Analysis'         = 'Analysis'
+    '03_Network'          = 'Network'
+    '04_Mobile-Forensics' = 'Mobile'
+    '04_Memory'           = 'Memory'
+    '05_Registry'         = 'Registry'
+    '06_Mobile'           = 'Mobile'
+    '07_Malware'          = 'Malware'
+    '08_Utilities'        = 'Utilities'
 }
 
 function Get-CategoryFromPath {
@@ -789,6 +993,120 @@ function Get-CategoryFromPath {
     return "Other"
 }
 
+# ─── Initialize Linux/macOS References Panel ────────────────────────────────
+function Initialize-LinuxReferences {
+    $pnlLinuxTools.Children.Clear()
+    $bc = New-Object System.Windows.Media.BrushConverter
+
+    # Load linux_reference_tools from config
+    try {
+        $raw    = Get-Content -LiteralPath $script:ConfigPath -Raw -ErrorAction Stop
+        $config = $raw | ConvertFrom-Json -ErrorAction Stop
+        $linuxTools = $config.linux_reference_tools
+    } catch {
+        $linuxTools = $null
+    }
+    if (-not $linuxTools -or $linuxTools.Count -eq 0) { return }
+
+    # Group by category
+    $groups = $linuxTools | Group-Object -Property category
+
+    foreach ($group in ($groups | Sort-Object Name)) {
+        # Card container
+        $card = New-Object System.Windows.Controls.Border
+        $card.Background      = $bc.ConvertFrom('#252526')
+        $card.CornerRadius    = [System.Windows.CornerRadius]::new(6)
+        $card.Padding         = [System.Windows.Thickness]::new(16)
+        $card.BorderBrush     = $bc.ConvertFrom('#3E3E3E')
+        $card.BorderThickness = [System.Windows.Thickness]::new(1)
+        $card.Margin          = [System.Windows.Thickness]::new(0, 0, 0, 16)
+
+        $sp = New-Object System.Windows.Controls.StackPanel
+
+        # Category header
+        $header = New-Object System.Windows.Controls.TextBlock
+        $header.Text       = $group.Name
+        $header.FontSize   = 16
+        $header.FontWeight = [System.Windows.FontWeights]::SemiBold
+        $header.Foreground = $bc.ConvertFrom('#FFFFFF')
+        $header.Margin     = [System.Windows.Thickness]::new(0, 0, 0, 10)
+        [void]$sp.Children.Add($header)
+
+        foreach ($tool in $group.Group) {
+            # Row: tool name (link) + description
+            $row = New-Object System.Windows.Controls.StackPanel
+            $row.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+            $row.Margin      = [System.Windows.Thickness]::new(0, 3, 0, 3)
+
+            # Clickable tool name
+            $link = New-Object System.Windows.Controls.TextBlock
+            $link.Text       = $tool.name
+            $link.Foreground = $bc.ConvertFrom('#0078D4')
+            $link.FontSize   = 13
+            $link.FontWeight = [System.Windows.FontWeights]::SemiBold
+            $link.Cursor     = [System.Windows.Input.Cursors]::Hand
+            $link.Tag        = $tool.url
+            $link.Add_MouseLeftButtonUp({
+                param($s, $e)
+                $url = $s.Tag
+                if ($url) { Start-Process $url }
+            })
+            $link.Add_MouseEnter({
+                param($s, $e)
+                $s.TextDecorations = [System.Windows.TextDecorations]::Underline
+            })
+            $link.Add_MouseLeave({
+                param($s, $e)
+                $s.TextDecorations = $null
+            })
+
+            # Separator
+            $sep = New-Object System.Windows.Controls.TextBlock
+            $sep.Text       = "  -  "
+            $sep.Foreground = $bc.ConvertFrom('#666666')
+            $sep.FontSize   = 13
+
+            # Description
+            $desc = New-Object System.Windows.Controls.TextBlock
+            $desc.Text       = $tool.description
+            $desc.Foreground = $bc.ConvertFrom('#AAAAAA')
+            $desc.FontSize   = 12
+            $desc.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+
+            [void]$row.Children.Add($link)
+            [void]$row.Children.Add($sep)
+            [void]$row.Children.Add($desc)
+            [void]$sp.Children.Add($row)
+        }
+
+        $card.Child = $sp
+        [void]$pnlLinuxTools.Children.Add($card)
+    }
+}
+
+# ─── Helper: Unblock files with Mark of the Web ─────────────────────────────
+function Unblock-ToolIfNeeded {
+    <# Removes the Zone.Identifier ADS (MOTW) that causes Windows SmartScreen
+       to block downloaded executables from launching. Returns $true if the file
+       was unblocked or had no MOTW, $false if unblock failed. #>
+    param([string]$FilePath)
+    if (-not (Test-Path -LiteralPath $FilePath)) { return $true }
+    try {
+        $zone = Get-Content -LiteralPath $FilePath -Stream Zone.Identifier -ErrorAction SilentlyContinue
+        if ($zone) {
+            if ($script:ForensicModeActive) {
+                # Cannot modify files in Forensic Mode
+                return $false
+            }
+            Remove-Item -LiteralPath $FilePath -Stream Zone.Identifier -ErrorAction Stop
+            return $true
+        }
+    } catch {
+        return $false
+    }
+    return $true  # No MOTW present
+}
+
 # ─── Helper: Append to Log (thread-safe) ────────────────────────────────────
 function Write-Log {
     param([string]$Message)
@@ -796,6 +1114,11 @@ function Write-Log {
     $line = "[$timestamp] $Message`r`n"
     $txtLog.AppendText($line)
     $txtLog.ScrollToEnd()
+    # Mirror to debug log file
+    $level = if ($Message -match '^ERROR|^UPDATE ERROR') { 'ERROR' }
+             elseif ($Message -match '^WARNING') { 'WARN' }
+             else { 'INFO' }
+    Write-DebugLog $Message $level
 }
 
 # ─── Helper: Update Status Text (thread-safe) ───────────────────────────────
@@ -806,9 +1129,41 @@ function Set-StatusText {
 
 # ─── Helper: Update Progress Bar (thread-safe) ──────────────────────────────
 function Set-Progress {
-    param([double]$Value, [bool]$Indeterminate = $false)
+    param(
+        [double]$Value,
+        [bool]$Indeterminate = $false,
+        [string]$Color = ''
+    )
     $progressBar.IsIndeterminate = $Indeterminate
     $progressBar.Value = $Value
+    if ($Color) {
+        $progressBar.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($Color)
+    }
+}
+
+# ─── Helper: Update Drive Space Info ────────────────────────────────────────
+function Update-DriveSpaceInfo {
+    try {
+        $driveLetter = $script:DriveRoot.TrimEnd(':\/')
+        $vol = Get-Volume -DriveLetter $driveLetter -ErrorAction Stop
+        $usedGB   = [math]::Round(($vol.Size - $vol.SizeRemaining) / 1GB, 1)
+        $totalGB  = [math]::Round($vol.Size / 1GB, 1)
+        $freeGB   = [math]::Round($vol.SizeRemaining / 1GB, 1)
+        $pctUsed  = if ($vol.Size -gt 0) { [math]::Round(($vol.Size - $vol.SizeRemaining) / $vol.Size * 100, 0) } else { 0 }
+        $txtDriveSpaceSettings.Text = "Space: $usedGB GB used of $totalGB GB ($freeGB GB free)"
+        # Update the space bar width proportionally (max width = parent width)
+        $barDriveSpace.Width = [math]::Max(2, $pctUsed / 100.0 * 568)
+        # Color: green when < 80%, yellow < 90%, red >= 90%
+        if ($pctUsed -ge 90) {
+            $barDriveSpace.Background = $script:BrushConverter.ConvertFrom('#FF4444')
+        } elseif ($pctUsed -ge 80) {
+            $barDriveSpace.Background = $script:BrushConverter.ConvertFrom('#FFD93D')
+        } else {
+            $barDriveSpace.Background = $script:BrushConverter.ConvertFrom('#0078D4')
+        }
+    } catch {
+        $txtDriveSpaceSettings.Text = "Space: N/A"
+    }
 }
 
 # ─── Helper: Update Summary Counts ──────────────────────────────────────────
@@ -818,12 +1173,21 @@ function Update-Summary {
     $manual    = @($script:ToolItems | Where-Object { $_.StatusKey -eq "ManualCheck"     }).Count
     $errors    = @($script:ToolItems | Where-Object { $_.StatusKey -eq "Error"           }).Count
     $total     = $script:ToolItems.Count
-    $parts = @("$total tools")
+
+    # Build summary text with status indicator
+    $indicator = if ($errors -gt 0) { [char]::ConvertFromUtf32(0x1F534) }         # red circle
+                 elseif ($available -gt 0) { [char]::ConvertFromUtf32(0x1F7E1) }  # yellow circle
+                 else { [char]::ConvertFromUtf32(0x1F7E2) }                        # green circle
+
+    $parts = @("$indicator $total tools")
     if ($upToDate  -gt 0) { $parts += "$upToDate current"  }
     if ($available -gt 0) { $parts += "$available updates" }
     if ($manual    -gt 0) { $parts += "$manual manual"     }
     if ($errors    -gt 0) { $parts += "$errors errors"     }
-    $txtSummary.Text = $parts -join " | "
+    $txtSummary.Text = $parts -join "  |  "
+
+    # Update tool count in Settings if available
+    $txtToolCountSettings.Text = "Tools: $total tracked in config ($upToDate current, $available updates)"
 }
 
 # ─── Helper: Update Forensic Mode UI ─────────────────────────────────────────
@@ -847,6 +1211,7 @@ function Update-ForensicModeUI {
         $btnSelectUpdates.IsEnabled  = $false
         $btnDeselectAll.IsEnabled    = $false
         $btnUpdateSelected.IsEnabled = $false
+        $btnUpdateAll.IsEnabled      = $false
         $btnRefresh.IsEnabled        = $false
         $btnScanNewToolsSettings.IsEnabled = $false
         $txtStatus.Text = "Forensic Mode active - drive is read-only. Updates are disabled."
@@ -867,6 +1232,7 @@ function Update-ForensicModeUI {
         $btnSelectUpdates.IsEnabled  = $true
         $btnDeselectAll.IsEnabled    = $true
         $btnUpdateSelected.IsEnabled = $true
+        $btnUpdateAll.IsEnabled      = $true
         $btnRefresh.IsEnabled        = $true
         $btnScanNewToolsSettings.IsEnabled = $true
         $txtStatus.Text = "Ready"
@@ -1345,8 +1711,6 @@ function Test-InternetConnection {
 
 # ─── Background Check for Updates ────────────────────────────────────────────
 function Start-UpdateCheck {
-    Write-Host "[DIAG] Start-UpdateCheck called" -ForegroundColor Cyan
-
     # Guard: RunspacePool must be ready
     if (-not $script:RunspacePool -or $script:RunspacePool.RunspacePoolStateInfo.State -ne 'Opened') {
         Write-Log "ERROR: RunspacePool is not available. Cannot check for updates."
@@ -1357,6 +1721,7 @@ function Start-UpdateCheck {
     # Disable buttons during check
     $btnRefresh.IsEnabled        = $false
     $btnUpdateSelected.IsEnabled = $false
+    $btnUpdateAll.IsEnabled      = $false
     $btnSelectUpdates.IsEnabled  = $false
 
     Set-StatusText "Checking for updates..."
@@ -1418,7 +1783,17 @@ function Start-UpdateCheck {
     $psCmd.RunspacePool = $script:RunspacePool
 
     [void]$psCmd.AddScript({
-        param($DriveRoot, $ModulePath, $ConfigPath, $HasModule, $ToolItems, $Dispatcher)
+        param($DriveRoot, $ModulePath, $PkgManagerPath, $ConfigPath, $HasModule, $HasPkgManager, $ToolItems, $Dispatcher, $DebugLogPath)
+        # Helper: write to debug log from the check runspace
+        function Write-RsDebugLog ($msg, $lvl) {
+            if (-not $DebugLogPath) { return }
+            $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
+            try { [System.IO.File]::AppendAllText($DebugLogPath, "$ts [$lvl] [CheckRunspace] $msg`r`n") } catch { }
+        }
+        # Load Package-Manager module for PM-based version lookups
+        if ($HasPkgManager) {
+            try { . $PkgManagerPath; Set-StrictMode -Off } catch { }
+        }
         # Check internet first
         $hasInternet = $true
         try {
@@ -1437,7 +1812,7 @@ function Start-UpdateCheck {
 
         if (-not $hasInternet) {
             try {
-                $Dispatcher.BeginInvoke([Action]{
+                [void]$Dispatcher.BeginInvoke([Action]{
                     foreach ($item in $ToolItems) {
                         $item.LatestVersion = "No Internet"
                         $item.Status        = "No connection"
@@ -1457,9 +1832,44 @@ function Start-UpdateCheck {
                 Set-StrictMode -Off
 
                 $results = Get-AllUpdateStatus -ConfigPath $ConfigPath
+                Write-RsDebugLog "Update check returned $(@($results).Count) results" 'INFO'
+                foreach ($r in $results) {
+                    Write-RsDebugLog "  $($r.ToolName): Latest=$($r.LatestVersion) Update=$($r.UpdateAvailable) Source=$($r.SourceType) Notes=$($r.Notes)" 'DEBUG'
+                }
+
+                # ── PM version supplementation ──
+                # For tools that the standard checker couldn't resolve, try
+                # package managers as a fallback version source.
+                $pmSupplemented = @{}
+                if ($HasPkgManager) {
+                    $configJson = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+                    foreach ($r in $results) {
+                        $needsPM = (-not $r.UpdateAvailable) -and (-not $r.LatestVersion -or $r.LatestVersion -eq 'N/A')
+                        $isError = $r.Notes -and $r.Notes -match 'error|fail'
+                        if (-not $needsPM -and -not $isError) { continue }
+
+                        $cfg = $configJson.tools | Where-Object { $_.name -eq $r.ToolName } | Select-Object -First 1
+                        if (-not $cfg) { continue }
+
+                        $pmVer = $null
+                        if ($cfg.scoop_id -and (Test-PackageManager 'scoop')) {
+                            $pmVer = Get-ScoopPackageVersion -PackageId $cfg.scoop_id
+                            Write-RsDebugLog "  PM scoop '$($cfg.scoop_id)' for '$($r.ToolName)': $pmVer" 'DEBUG'
+                        }
+                        if (-not $pmVer -and $cfg.winget_id -and (Test-PackageManager 'winget')) {
+                            $pmVer = Get-WingetPackageVersion -PackageId $cfg.winget_id
+                            Write-RsDebugLog "  PM winget '$($cfg.winget_id)' for '$($r.ToolName)': $pmVer" 'DEBUG'
+                        }
+
+                        if ($pmVer) {
+                            $pmSupplemented[$r.ToolName] = $pmVer
+                            Write-RsDebugLog "  PM resolved '$($r.ToolName)' -> $pmVer" 'INFO'
+                        }
+                    }
+                }
 
                 # Map results back to the UI items
-                $Dispatcher.BeginInvoke([Action]{
+                [void]$Dispatcher.BeginInvoke([Action]{
                     foreach ($r in $results) {
                         $matchItem = $ToolItems | Where-Object { $_.Name -eq $r.ToolName } | Select-Object -First 1
                         if (-not $matchItem) { continue }
@@ -1476,6 +1886,9 @@ function Start-UpdateCheck {
                             $matchItem.Notes = $r.Notes
                         }
 
+                        # Check if PM provided a version where normal check couldn't
+                        $pmVer = $pmSupplemented[$r.ToolName]
+
                         # Determine status
                         if ($r.UpdateAvailable -eq $true) {
                             $matchItem.Status    = "Update available"
@@ -1483,9 +1896,32 @@ function Start-UpdateCheck {
                         } elseif ($r.UpdateAvailable -eq $false) {
                             $matchItem.Status    = "Up to date"
                             $matchItem.StatusKey = "UpToDate"
+                        } elseif ($pmVer) {
+                            # PM resolved a version — compare with current
+                            $matchItem.LatestVersion = $pmVer
+                            $curVer = $matchItem.CurrentVersion
+                            if ($curVer -and $curVer -ne 'Unknown' -and $curVer -ne 'N/A') {
+                                if ($pmVer -eq $curVer) {
+                                    $matchItem.Status    = "Up to date"
+                                    $matchItem.StatusKey = "UpToDate"
+                                } else {
+                                    # Normalize: strip leading 'v' for comparison
+                                    $normCur = ($curVer -replace '^v','').Trim()
+                                    $normPm  = ($pmVer  -replace '^v','').Trim()
+                                    if ($normCur -eq $normPm) {
+                                        $matchItem.Status    = "Up to date"
+                                        $matchItem.StatusKey = "UpToDate"
+                                    } else {
+                                        $matchItem.Status    = "Update available"
+                                        $matchItem.StatusKey = "UpdateAvailable"
+                                    }
+                                }
+                            } else {
+                                # No current version known — show PM version as latest, suggest verify
+                                $matchItem.Status    = "Latest: $pmVer"
+                                $matchItem.StatusKey = "ManualCheck"
+                            }
                         } elseif ($r.SourceType -eq 'web' -and $r.LatestVersion) {
-                            # Web tool where scraping found a version but couldn't compare
-                            # (e.g. current_version is unknown)
                             $matchItem.LatestVersion = $r.LatestVersion
                             $matchItem.Status        = "Verify version"
                             $matchItem.StatusKey     = "ManualCheck"
@@ -1494,12 +1930,12 @@ function Start-UpdateCheck {
                             $matchItem.Status        = "Check manually"
                             $matchItem.StatusKey     = "ManualCheck"
                         } elseif ($r.Notes -and $r.Notes -match 'error|fail') {
-                            $matchItem.LatestVersion = "Error"
-                            $matchItem.Status        = "Error checking"
-                            $matchItem.StatusKey     = "Error"
+                            $matchItem.LatestVersion = "N/A"
+                            $matchItem.Status        = "Check manually"
+                            $matchItem.StatusKey     = "ManualCheck"
                         } else {
                             $matchItem.LatestVersion = "N/A"
-                            $matchItem.Status        = "Check manually  ?"
+                            $matchItem.Status        = "Check manually"
                             $matchItem.StatusKey     = "ManualCheck"
                         }
                     }
@@ -1509,7 +1945,7 @@ function Start-UpdateCheck {
             } catch {
                 $errMsg = $_.Exception.Message
                 try {
-                    $Dispatcher.BeginInvoke([Action]{
+                    [void]$Dispatcher.BeginInvoke([Action]{
                         foreach ($item in $ToolItems) {
                             if ($item.StatusKey -eq "Checking") {
                                 $item.LatestVersion = "Error"
@@ -1526,7 +1962,7 @@ function Start-UpdateCheck {
         }
         else {
             # No module: simulate with sample results for preview mode
-            $Dispatcher.BeginInvoke([Action]{
+            [void]$Dispatcher.BeginInvoke([Action]{
                 foreach ($item in $ToolItems) {
                     if ($item.SourceType -eq 'web') {
                         $item.LatestVersion = "N/A"
@@ -1550,10 +1986,13 @@ function Start-UpdateCheck {
     # Pass variables as arguments (matched to param() order above)
     [void]$psCmd.AddArgument($script:DriveRoot)
     [void]$psCmd.AddArgument($script:ModulePath)
+    [void]$psCmd.AddArgument($script:PkgManagerPath)
     [void]$psCmd.AddArgument($script:ConfigPath)
     [void]$psCmd.AddArgument($script:HasModule)
+    [void]$psCmd.AddArgument($script:HasPkgManager)
     [void]$psCmd.AddArgument($script:ToolItems)
     [void]$psCmd.AddArgument($window.Dispatcher)
+    [void]$psCmd.AddArgument($script:DebugLogPath)
 
     $handle = $psCmd.BeginInvoke()
 
@@ -1563,16 +2002,18 @@ function Start-UpdateCheck {
     $script:ChkStartTime = [DateTime]::Now
     $script:ChkTimeoutSec = 120
     $script:ChkFinalTick = $false
-    Write-Host "[DIAG] Runspace started, handle obtained" -ForegroundColor Cyan
 
     # ── Helper to finalize the check (re-enable buttons, cleanup) ──
     function script:Complete-UpdateCheck {
         try {
             $btnRefresh.IsEnabled        = $true
             $btnUpdateSelected.IsEnabled = $true
+            $btnUpdateAll.IsEnabled      = $true
             $btnSelectUpdates.IsEnabled  = $true
             Set-Progress -Value 100 -Indeterminate $false
             Update-Summary
+            $script:LastCheckTime = Get-Date
+            $txtLastCheckedSettings.Text = "Last checked: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
         } catch {
             # Ensure buttons are re-enabled even if summary/progress fail
             try { $btnRefresh.IsEnabled = $true } catch {}
@@ -1615,7 +2056,6 @@ function Start-UpdateCheck {
                     return
                 }
                 $script:ChkTimer.Stop()
-                Write-Host "[DIAG] Runspace completed" -ForegroundColor Green
 
                 try {
                     $result = $script:ChkCommand.EndInvoke($script:ChkHandle)
@@ -1683,6 +2123,8 @@ function Start-UpdateCheck {
             try { $script:ChkRunspace.Close() } catch {}
             Write-Host "[DIAG] Timer tick ERROR: $($_.Exception.Message)" -ForegroundColor Red
             Write-Host "[DIAG] $($_.ScriptStackTrace)" -ForegroundColor Red
+            Write-DebugLog "Check timer error: $($_.Exception.Message)" 'ERROR'
+            Write-DebugLog "  Stack: $($_.ScriptStackTrace)" 'ERROR'
             Write-Log "ERROR in update check timer: $($_.Exception.Message)"
             Set-StatusText "Update check encountered an error."
             Complete-UpdateCheck
@@ -1690,7 +2132,6 @@ function Start-UpdateCheck {
     })
 
     $script:ChkTimer.Start()
-    Write-Host "[DIAG] Timer started, polling every 500ms (timeout: $($script:ChkTimeoutSec)s)" -ForegroundColor Cyan
 }
 
 # ─── Background Update Execution ─────────────────────────────────────────────
@@ -1734,14 +2175,18 @@ function Start-SelectedUpdates {
     )
     if ($confirm -ne [System.Windows.MessageBoxResult]::Yes) { return }
 
-    # Disable buttons
+    # Disable normal buttons, show Cancel
     $btnRefresh.IsEnabled        = $false
     $btnUpdateSelected.IsEnabled = $false
+    $btnUpdateAll.IsEnabled      = $false
     $btnSelectUpdates.IsEnabled  = $false
     $btnDeselectAll.IsEnabled    = $false
+    $btnCancelUpdate.Visibility  = [System.Windows.Visibility]::Visible
+    $btnRetryFailed.Visibility   = [System.Windows.Visibility]::Collapsed
+    $script:UpdateCancelRequested = $false
 
     Set-StatusText "Updating tools..."
-    Set-Progress -Value 0 -Indeterminate $false
+    Set-Progress -Value 0 -Indeterminate $false -Color '#0078D4'
     Write-Log "Starting update for $($selected.Count) tool(s)..."
 
     # Expand log panel automatically
@@ -1749,52 +2194,151 @@ function Start-SelectedUpdates {
     $logPanel.Visibility = [System.Windows.Visibility]::Visible
     $btnToggleLog.Content = [char]0x25BC + " Hide Log"
 
-    # Build data to pass into the runspace
+    # Track which tools are being updated (for accurate fail detection in results)
+    $script:UpdatedToolNames = @($selected | ForEach-Object { $_.Name })
+
+    # Build data to pass into the runspace (include PM IDs from config)
     $updateJobs = @()
+    $configTools = $null
+    try {
+        $raw = Get-Content -LiteralPath $script:ConfigPath -Raw -ErrorAction Stop
+        $configTools = ($raw | ConvertFrom-Json -ErrorAction Stop).tools
+    } catch { }
+
     foreach ($item in $selected) {
-        $updateJobs += @{
+        $jobData = @{
             Name        = $item.Name
             DownloadUrl = $item.DownloadUrl
             ToolPath    = $item.ToolPath
             InstallType = $item.InstallType
+            WingetId    = $null
+            ScoopId     = $null
         }
+        # Look up PM IDs from config
+        if ($configTools) {
+            $cfgEntry = $configTools | Where-Object { $_.name -eq $item.Name } | Select-Object -First 1
+            if ($cfgEntry) {
+                $jobData.WingetId = $cfgEntry.winget_id
+                $jobData.ScoopId  = $cfgEntry.scoop_id
+            }
+        }
+        $updateJobs += $jobData
     }
 
     $psCmd = [PowerShell]::Create()
     $psCmd.RunspacePool = $script:RunspacePool
 
+    # Thread-safe cancel flag shared with runspace
+    $script:CancelFlag = [hashtable]::Synchronized(@{ Cancelled = $false })
+
     [void]$psCmd.AddScript({
-        param($DriveRoot, $ModulePath, $HasModule, $ToolItems, $UpdateJobs, $Dispatcher)
+        param($DriveRoot, $ModulePath, $PkgManagerPath, $HasModule, $HasPkgManager, $ToolItems, $UpdateJobs, $Dispatcher, $CancelFlag, $DebugLogPath, $ConfigPath)
         if ($HasModule) {
             . $ModulePath
             Set-StrictMode -Off
         }
+        if ($HasPkgManager) {
+            . $PkgManagerPath
+            Set-StrictMode -Off
+        }
 
-        $successCount = 0
-        $failCount    = 0
-        $idx          = 0
+        # Helper: write to debug log from the runspace thread
+        function Write-RsDebugLog ($msg, $lvl) {
+            $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
+            try { [System.IO.File]::AppendAllText($DebugLogPath, "$ts [$lvl] [UpdateRunspace] $msg`r`n") } catch { }
+        }
+
+        # Helper: update per-tool status on UI thread
+        function Set-ToolStatus ($toolName, $statusText) {
+            [void]$Dispatcher.BeginInvoke([Action]{
+                $item = $ToolItems | Where-Object { $_.Name -eq $toolName } | Select-Object -First 1
+                if ($item) { $item.Status = $statusText }
+            }.GetNewClosure())
+        }
+
+        $successCount  = 0
+        $failCount     = 0
+        $cancelCount   = 0
+        $idx           = 0
+        $resultDetails = @()
+
+        Write-RsDebugLog "Starting update batch: $($UpdateJobs.Count) tool(s)" 'INFO'
 
         foreach ($job in $UpdateJobs) {
             $idx++
             $name = $job.Name
+            Write-RsDebugLog "[$idx/$($UpdateJobs.Count)] Processing '$name' | URL=$($job.DownloadUrl) | Type=$($job.InstallType) | Scoop=$($job.ScoopId) | Winget=$($job.WingetId)" 'DEBUG'
 
-            # Mark as "Updating..." on UI
-            $Dispatcher.BeginInvoke([Action]{
-                $item = $ToolItems | Where-Object { $_.Name -eq $name } | Select-Object -First 1
-                if ($item) { $item.Status = "Updating..." }
-            }.GetNewClosure())
+            # ── Check cancellation ──
+            if ($CancelFlag.Cancelled) {
+                Write-RsDebugLog "[$idx] '$name' cancelled by user" 'INFO'
+                $cancelCount++
+                Set-ToolStatus $name "Cancelled"
+                [void]$Dispatcher.BeginInvoke([Action]{
+                    $item = $ToolItems | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+                    if ($item) { $item.StatusKey = "ManualCheck" }
+                }.GetNewClosure())
+                $resultDetails += @{ Name = $name; Result = 'Cancelled'; Message = 'Cancelled by user' }
+                continue
+            }
+
+            # Mark as "Downloading..." on UI
+            Set-ToolStatus $name "Downloading..."
 
             $success = $false
             $message = ""
 
-            if ($HasModule) {
-                # Use Install-ToolUpdate from the module
+            # ── Strategy 1: Try package manager (scoop > winget) ──
+            $pmTried = $false
+            if ($HasPkgManager) {
+                if ($job.ScoopId -and (Test-PackageManager 'scoop')) {
+                    $pmTried = $true
+                    Write-RsDebugLog "[$idx] '$name' -> trying scoop ($($job.ScoopId))" 'DEBUG'
+                    Set-ToolStatus $name "Installing via scoop..."
+                    try {
+                        $pmResult = Install-ScoopPackage -PackageId $job.ScoopId
+                        $success = $pmResult.Success
+                        $message = $pmResult.Message
+                        Write-RsDebugLog "[$idx] '$name' scoop result: Success=$success Msg=$message" 'DEBUG'
+                    } catch {
+                        $message = "scoop update failed for '$name': $_"
+                        Write-RsDebugLog "[$idx] '$name' scoop exception: $_" 'ERROR'
+                    }
+                }
+                elseif ($job.WingetId -and (Test-PackageManager 'winget')) {
+                    $pmTried = $true
+                    Write-RsDebugLog "[$idx] '$name' -> trying winget ($($job.WingetId))" 'DEBUG'
+                    Set-ToolStatus $name "Installing via winget..."
+                    $installPath = Join-Path $DriveRoot $job.ToolPath
+                    try {
+                        $pmResult = Install-WingetPackage -PackageId $job.WingetId -TargetDir $installPath
+                        $success = $pmResult.Success
+                        $message = $pmResult.Message
+                        Write-RsDebugLog "[$idx] '$name' winget result: Success=$success Msg=$message" 'DEBUG'
+                    } catch {
+                        $message = "winget update failed for '$name': $_"
+                        Write-RsDebugLog "[$idx] '$name' winget exception: $_" 'ERROR'
+                    }
+                }
+            }
+
+            # Check cancellation between strategies
+            if ($CancelFlag.Cancelled -and -not $success) {
+                $cancelCount++
+                Set-ToolStatus $name "Cancelled"
+                [void]$Dispatcher.BeginInvoke([Action]{
+                    $item = $ToolItems | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+                    if ($item) { $item.StatusKey = "ManualCheck" }
+                }.GetNewClosure())
+                $resultDetails += @{ Name = $name; Result = 'Cancelled'; Message = 'Cancelled by user' }
+                continue
+            }
+
+            # ── Strategy 2: Fall back to direct download ──
+            if (-not $success -and $HasModule) {
                 $installPath = Join-Path $DriveRoot $job.ToolPath
 
-                if ([string]::IsNullOrWhiteSpace($job.DownloadUrl)) {
-                    $message = "No download URL for '$name'."
-                } elseif ($job.InstallType -eq 'manual') {
-                    # Open browser for manual installs
+                if ($job.InstallType -eq 'manual') {
                     try {
                         Start-Process $job.DownloadUrl -ErrorAction Stop
                         $success = $true
@@ -1802,21 +2346,40 @@ function Start-SelectedUpdates {
                     } catch {
                         $message = "Failed to open URL for '$name': $_"
                     }
-                } else {
+                } elseif (-not [string]::IsNullOrWhiteSpace($job.DownloadUrl)) {
+                    # Map unsupported install types to closest supported type
+                    $effectiveType = $job.InstallType
+                    if ($effectiveType -notin @('extract_zip', 'extract_7z', 'copy_exe', 'manual')) {
+                        $effectiveType = 'extract_zip'
+                    }
+
+                    if ($pmTried) {
+                        Set-ToolStatus $name "PM failed, downloading..."
+                        $message = "PM failed, trying direct download... "
+                    } else {
+                        Set-ToolStatus $name "Downloading..."
+                    }
+                    Write-RsDebugLog "[$idx] '$name' -> direct download: $($job.DownloadUrl) (type=$effectiveType)" 'DEBUG'
                     try {
                         $result = Install-ToolUpdate -ToolName $name `
                                                      -DownloadUrl $job.DownloadUrl `
                                                      -InstallPath $installPath `
-                                                     -InstallType $job.InstallType `
+                                                     -InstallType $effectiveType `
                                                      -Confirm:$false
                         $success = $result.Success
-                        $message = $result.Message
+                        $message += $result.Message
+                        Write-RsDebugLog "[$idx] '$name' download result: Success=$success Msg=$($result.Message)" 'DEBUG'
                     } catch {
-                        $message = "Update failed for '$name': $_"
+                        $message += "Update failed for '$name': $_"
+                        Write-RsDebugLog "[$idx] '$name' download exception: $_" 'ERROR'
                     }
+                } elseif (-not $pmTried) {
+                    $message = "No download URL or package manager available for '$name'."
+                    Write-RsDebugLog "[$idx] '$name' -> no download URL or PM available" 'WARN'
                 }
-            } else {
+            } elseif (-not $success -and -not $HasModule) {
                 # Preview mode: simulate
+                Set-ToolStatus $name "Installing..."
                 Start-Sleep -Milliseconds (Get-Random -Minimum 500 -Maximum 1500)
                 $success = ((Get-Random -Minimum 0 -Maximum 10) -lt 8)
                 $message = if ($success) { "Simulated success." } else { "Simulated failure." }
@@ -1824,38 +2387,76 @@ function Start-SelectedUpdates {
 
             if ($success) {
                 $successCount++
-                $Dispatcher.BeginInvoke([Action]{
+                Set-ToolStatus $name "Extracting..."
+                Start-Sleep -Milliseconds 200   # brief visual pause so user sees the stage
+                # Persist updated version to config file (file I/O from runspace thread)
+                $savedVersion = $null
+                $toolItem = $ToolItems | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+                if ($toolItem -and $toolItem.LatestVersion -and $toolItem.LatestVersion -notin @("N/A","Error","No Internet","Checking...")) {
+                    $savedVersion = $toolItem.LatestVersion
+                    try {
+                        $raw = [System.IO.File]::ReadAllText($ConfigPath)
+                        $cfg = $raw | ConvertFrom-Json
+                        foreach ($t in $cfg.tools) {
+                            if ($t.name -eq $name) {
+                                $t.current_version = $savedVersion
+                                break
+                            }
+                        }
+                        $cfg.last_updated = (Get-Date -Format 'yyyy-MM-dd')
+                        $json = $cfg | ConvertTo-Json -Depth 10
+                        [System.IO.File]::WriteAllText($ConfigPath, $json)
+                        Write-RsDebugLog "[$idx] '$name' version saved to config: $savedVersion" 'INFO'
+                    } catch {
+                        Write-RsDebugLog "[$idx] '$name' failed to save version to config: $_" 'ERROR'
+                    }
+                }
+                [void]$Dispatcher.BeginInvoke([Action]{
                     $item = $ToolItems | Where-Object { $_.Name -eq $name } | Select-Object -First 1
                     if ($item) {
-                        if ($item.LatestVersion -and $item.LatestVersion -notin @("N/A","Error","No Internet","Checking...")) {
-                            $item.CurrentVersion = $item.LatestVersion
+                        if ($savedVersion) {
+                            $item.CurrentVersion = $savedVersion
                         }
-                        $item.Status    = "Up to date"
+                        $item.Status    = "Updated"
                         $item.StatusKey = "UpToDate"
                         $item.IsSelected = $false
                     }
                 }.GetNewClosure())
+                $resultDetails += @{ Name = $name; Result = 'Success'; Message = $message }
             } else {
                 $failCount++
-                $Dispatcher.BeginInvoke([Action]{
+                [void]$Dispatcher.BeginInvoke([Action]{
                     $item = $ToolItems | Where-Object { $_.Name -eq $name } | Select-Object -First 1
                     if ($item) {
                         $item.Status    = "Update failed"
                         $item.StatusKey = "Error"
+                        $item.Notes     = $message
                     }
                 }.GetNewClosure())
+                $resultDetails += @{ Name = $name; Result = 'Failed'; Message = $message }
             }
         }
 
-        return @{ Success = $successCount; Failed = $failCount; Total = $UpdateJobs.Count }
+        return @{
+            Success  = $successCount
+            Failed   = $failCount
+            Cancelled = $cancelCount
+            Total    = $UpdateJobs.Count
+            Details  = $resultDetails
+        }
     })
     # Pass variables as arguments (matched to param() order above)
     [void]$psCmd.AddArgument($script:DriveRoot)
     [void]$psCmd.AddArgument($script:ModulePath)
+    [void]$psCmd.AddArgument($script:PkgManagerPath)
     [void]$psCmd.AddArgument($script:HasModule)
+    [void]$psCmd.AddArgument($script:HasPkgManager)
     [void]$psCmd.AddArgument($script:ToolItems)
     [void]$psCmd.AddArgument($updateJobs)
     [void]$psCmd.AddArgument($window.Dispatcher)
+    [void]$psCmd.AddArgument($script:CancelFlag)
+    [void]$psCmd.AddArgument($script:DebugLogPath)
+    [void]$psCmd.AddArgument($script:ConfigPath)
 
     $handle = $psCmd.BeginInvoke()
 
@@ -1892,39 +2493,103 @@ function Start-SelectedUpdates {
                 } catch {}
 
                 try { $script:UpdCommand.Dispose() } catch {}
-                # Runspace is managed by the pool — no manual close needed
 
-                # Re-enable buttons
+                # Re-enable buttons, hide Cancel, reset its state
                 $btnRefresh.IsEnabled        = $true
                 $btnUpdateSelected.IsEnabled = $true
+                $btnUpdateAll.IsEnabled      = $true
                 $btnSelectUpdates.IsEnabled  = $true
                 $btnDeselectAll.IsEnabled    = $true
+                $btnCancelUpdate.Visibility  = [System.Windows.Visibility]::Collapsed
+                $btnCancelUpdate.IsEnabled   = $true
+                $btnCancelUpdate.Content     = [char]::ConvertFromUtf32(0x274C) + " Cancel"
 
-                Set-Progress -Value 100 -Indeterminate $false
-
-                $s = 0; $f = 0
+                $s = 0; $f = 0; $c = 0
+                $details = @()
                 if ($result -and $result.Count -gt 0) {
                     $r = $result[0]
                     if ($r -is [hashtable]) {
-                        $s = $r.Success; $f = $r.Failed
+                        $s = $r.Success; $f = $r.Failed; $c = $r.Cancelled
+                        $details = $r.Details
                     }
                 }
 
-                Set-StatusText "Update complete."
-                Update-Summary
-                Write-Log "Update complete: $s succeeded, $f failed."
+                # ── Color-coded progress bar ──
+                if ($f -gt 0) {
+                    Set-Progress -Value 100 -Indeterminate $false -Color '#E74C3C'   # Red for failures
+                } elseif ($c -gt 0) {
+                    Set-Progress -Value 100 -Indeterminate $false -Color '#F39C12'   # Yellow for cancelled
+                } else {
+                    Set-Progress -Value 100 -Indeterminate $false -Color '#2ECC71'   # Green for all success
+                }
 
-                [System.Windows.MessageBox]::Show(
-                    "$s tool(s) updated successfully.`n$f tool(s) failed.",
-                    "Update Complete",
-                    [System.Windows.MessageBoxButton]::OK,
-                    $(if ($f -gt 0) { [System.Windows.MessageBoxImage]::Warning } else { [System.Windows.MessageBoxImage]::Information })
-                )
+                Update-Summary
+
+                # ── Inline results in the log panel (no MessageBox) ──
+                Write-Log "────────────────────────────────────────"
+                Write-Log "UPDATE COMPLETE: $s succeeded, $f failed, $c cancelled"
+                Write-Log "────────────────────────────────────────"
+
+                if ($details -and $details.Count -gt 0) {
+                    foreach ($d in $details) {
+                        $icon = switch ($d.Result) {
+                            'Success'   { '+' }
+                            'Failed'    { 'x' }
+                            'Cancelled' { '-' }
+                            default     { '?' }
+                        }
+                        $msg = if ($d.Message) { " - $($d.Message)" } else { '' }
+                        # Truncate long messages for readability
+                        if ($msg.Length -gt 120) { $msg = $msg.Substring(0, 117) + '...' }
+                        Write-Log "  $icon  $($d.Name)$msg"
+                    }
+                }
+                Write-Log "────────────────────────────────────────"
+
+                # Build status text summary
+                $statusParts = @()
+                if ($s -gt 0) { $statusParts += "$s updated" }
+                if ($f -gt 0) { $statusParts += "$f failed" }
+                if ($c -gt 0) { $statusParts += "$c cancelled" }
+                Set-StatusText "Update complete: $($statusParts -join ', ')."
+
+                # Show Retry Failed button if there were failures
+                if ($f -gt 0) {
+                    $btnRetryFailed.Visibility = [System.Windows.Visibility]::Visible
+                } else {
+                    $btnRetryFailed.Visibility = [System.Windows.Visibility]::Collapsed
+                }
+
+                # Reset progress bar color after a delay
+                $script:ProgressResetTimer = New-Object System.Windows.Threading.DispatcherTimer
+                $script:ProgressResetTimer.Interval = [TimeSpan]::FromSeconds(5)
+                $script:ProgressResetTimer.Add_Tick({
+                    $script:ProgressResetTimer.Stop()
+                    Set-Progress -Value 0 -Color '#0078D4'
+                })
+                $script:ProgressResetTimer.Start()
+
             } else {
-                # Show per-tool progress while running
-                $updItem = $script:ToolItems | Where-Object { $_.Status -eq "Updating..." } | Select-Object -First 1
-                if ($updItem) {
-                    Set-StatusText "Updating: $($updItem.Name) ..."
+                # ── Live per-tool progress while running ──
+                $activeItem = $script:ToolItems | Where-Object {
+                    $_.Status -match 'Downloading|Installing|Extracting|PM failed'
+                } | Select-Object -First 1
+
+                # Count completed items from the tracked update set only
+                $trackedNames = $script:UpdatedToolNames
+                $doneCount = @($script:ToolItems | Where-Object {
+                    $_.Name -in $trackedNames -and
+                    ($_.Status -in @("Updated","Up to date","Update failed","Cancelled"))
+                }).Count
+                $totalUpd = $trackedNames.Count
+
+                if ($totalUpd -gt 0) {
+                    $pct = [math]::Round(($doneCount / $totalUpd) * 100)
+                    Set-Progress -Value $pct -Indeterminate $false -Color '#0078D4'
+                }
+                if ($activeItem) {
+                    $progressText = if ($totalUpd -gt 0) { " ($([math]::Min($doneCount + 1, $totalUpd))/$totalUpd)" } else { "" }
+                    Set-StatusText "$($activeItem.Status): $($activeItem.Name)$progressText"
                 }
             }
         } catch {
@@ -1935,9 +2600,14 @@ function Start-SelectedUpdates {
             Write-Log "ERROR in update timer: $($_.Exception.Message)"
             $btnRefresh.IsEnabled        = $true
             $btnUpdateSelected.IsEnabled = $true
+            $btnUpdateAll.IsEnabled      = $true
             $btnSelectUpdates.IsEnabled  = $true
             $btnDeselectAll.IsEnabled    = $true
+            $btnCancelUpdate.Visibility  = [System.Windows.Visibility]::Collapsed
+            $btnCancelUpdate.IsEnabled   = $true
+            $btnCancelUpdate.Content     = [char]::ConvertFromUtf32(0x274C) + " Cancel"
             Set-StatusText "Update encountered an error."
+            Set-Progress -Value 0 -Color '#0078D4'
         }
     })
 
@@ -1947,16 +2617,19 @@ function Start-SelectedUpdates {
 # ─── Navigation ──────────────────────────────────────────────────────────────
 function Set-ActivePanel {
     param([string]$PanelName)
-    $panelDashboard.Visibility = [System.Windows.Visibility]::Collapsed
-    $panelUpdates.Visibility   = [System.Windows.Visibility]::Collapsed
-    $panelSettings.Visibility  = [System.Windows.Visibility]::Collapsed
-    $btnNavDashboard.Tag = $null
-    $btnNavUpdates.Tag   = $null
-    $btnNavSettings.Tag  = $null
+    $panelDashboard.Visibility  = [System.Windows.Visibility]::Collapsed
+    $panelUpdates.Visibility    = [System.Windows.Visibility]::Collapsed
+    $panelSettings.Visibility   = [System.Windows.Visibility]::Collapsed
+    $panelReferences.Visibility = [System.Windows.Visibility]::Collapsed
+    $btnNavDashboard.Tag  = $null
+    $btnNavUpdates.Tag    = $null
+    $btnNavReferences.Tag = $null
+    $btnNavSettings.Tag   = $null
     switch ($PanelName) {
-        "Dashboard" { $panelDashboard.Visibility = [System.Windows.Visibility]::Visible; $btnNavDashboard.Tag = "Active" }
-        "Updates"   { $panelUpdates.Visibility = [System.Windows.Visibility]::Visible; $btnNavUpdates.Tag = "Active" }
-        "Settings"  { $panelSettings.Visibility = [System.Windows.Visibility]::Visible; $btnNavSettings.Tag = "Active" }
+        "Dashboard"  { $panelDashboard.Visibility = [System.Windows.Visibility]::Visible;  $btnNavDashboard.Tag  = "Active" }
+        "Updates"    { $panelUpdates.Visibility = [System.Windows.Visibility]::Visible;    $btnNavUpdates.Tag    = "Active" }
+        "References" { $panelReferences.Visibility = [System.Windows.Visibility]::Visible; $btnNavReferences.Tag = "Active" }
+        "Settings"   { $panelSettings.Visibility = [System.Windows.Visibility]::Visible;   $btnNavSettings.Tag   = "Active" }
     }
 }
 
@@ -1984,8 +2657,8 @@ function Get-ToolIcon {
         } catch { }
     }
 
-    # Extract icon from exe
-    if ($ExePath -and (Test-Path -LiteralPath $ExePath) -and $ExePath -match '\.exe$') {
+    # Extract icon from exe/bat/py (ExtractAssociatedIcon works for any file type)
+    if ($ExePath -and (Test-Path -LiteralPath $ExePath) -and $ExePath -match '\.(exe|bat|py|cmd)$') {
         if ($script:IconCache.ContainsKey($ExePath)) { return $script:IconCache[$ExePath] }
         try {
             $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($ExePath)
@@ -2031,34 +2704,106 @@ function New-ToolTile {
     $border.ToolTip = "$($Tool.Name)`n$($Tool.ExePath)"
     $border.Tag = $Tool.ExePath
 
-    # Hover effects
+    # Hover effects - use pre-created brushes to avoid closure scope issues
+    $hoverBg = $script:BrushConverter.ConvertFrom('#3A3A4A')
+    $hoverBorder = $script:BrushConverter.ConvertFrom('#0078D4')
+    $normalBg = $border.Background
+    $normalBorder = $border.BorderBrush
     $border.Add_MouseEnter({
-        $this.Background = $script:BrushConverter.ConvertFrom('#3A3A4A')
-        $this.BorderBrush = $script:BrushConverter.ConvertFrom('#0078D4')
+        $this.Background = $hoverBg
+        $this.BorderBrush = $hoverBorder
     }.GetNewClosure())
     $border.Add_MouseLeave({
-        $this.Background = $script:BrushConverter.ConvertFrom('#2D2D2D')
-        $this.BorderBrush = $script:BrushConverter.ConvertFrom('#3E3E3E')
+        $this.Background = $normalBg
+        $this.BorderBrush = $normalBorder
     }.GetNewClosure())
 
-    # Click to launch
-    $exePath = $Tool.ExePath
-    $toolName = $Tool.Name
+    # Click to launch - store paths in Tag for access without closure issues
     $border.Add_MouseLeftButtonUp({
+        $clickedExe = $this.Tag
+        $clickedName = $this.ToolTip -split "`n" | Select-Object -First 1
         try {
-            $workingDir = Split-Path $exePath -Parent
-            Start-Process -FilePath $exePath -WorkingDirectory $workingDir
-            Write-Log "Launched: $toolName ($exePath)"
+            $workingDir = Split-Path $clickedExe -Parent
+            # Handle different file types
+            if ($clickedExe -match '\.py$') {
+                # Python scripts - launch with python.exe
+                Start-Process python.exe -ArgumentList "`"$clickedExe`"" -WorkingDirectory $workingDir
+            } elseif ($clickedExe -match '\.bat$') {
+                # Batch files - launch via cmd
+                Start-Process cmd.exe -ArgumentList "/c `"$clickedExe`"" -WorkingDirectory $workingDir
+            } else {
+                # Executables - unblock MOTW first
+                $unblocked = Unblock-ToolIfNeeded $clickedExe
+                if (-not $unblocked) {
+                    Write-Log "WARNING: Could not unblock MOTW on $clickedExe (Forensic Mode or permissions)"
+                }
+                Start-Process -FilePath $clickedExe -WorkingDirectory $workingDir
+            }
+            Write-Log "Launched: $clickedName ($clickedExe)"
         } catch {
-            Write-Log "ERROR: Failed to launch $toolName - $($_.Exception.Message)"
+            # If still blocked, give a helpful message
+            $msg = $_.Exception.Message
+            if ($msg -match 'canceled by the user') {
+                $msg = "Windows SmartScreen blocked this file (downloaded from internet).`n`nRight-click the file in Explorer > Properties > check 'Unblock' and try again.`n`nPath: $clickedExe"
+            }
             [System.Windows.MessageBox]::Show(
-                "Failed to launch '$toolName':`n$($_.Exception.Message)",
+                "Failed to launch '$clickedName':`n$msg",
                 "Launch Error",
                 [System.Windows.MessageBoxButton]::OK,
                 [System.Windows.MessageBoxImage]::Error
             )
         }
-    }.GetNewClosure())
+    })
+
+    # Right-click context menu for tile
+    $tileMenu = New-Object System.Windows.Controls.ContextMenu
+    $tileMenu.Background = $script:BrushConverter.ConvertFrom('#2D2D2D')
+    $tileMenu.Foreground = $script:BrushConverter.ConvertFrom('#CCCCCC')
+    $tileMenu.BorderBrush = $script:BrushConverter.ConvertFrom('#555555')
+
+    $tileLaunch = New-Object System.Windows.Controls.MenuItem
+    $tileLaunch.Header = "Launch"
+    $tileLaunch.FontWeight = [System.Windows.FontWeights]::SemiBold
+    $tileLaunch.Tag = $Tool.ExePath
+    $tileLaunch.Add_Click({
+        $exePath = $this.Tag
+        try {
+            $wd = Split-Path $exePath -Parent
+            if ($exePath -match '\.py$') {
+                Start-Process python.exe -ArgumentList "`"$exePath`"" -WorkingDirectory $wd
+            } elseif ($exePath -match '\.bat$') {
+                Start-Process cmd.exe -ArgumentList "/c `"$exePath`"" -WorkingDirectory $wd
+            } else {
+                Unblock-ToolIfNeeded $exePath | Out-Null
+                Start-Process -FilePath $exePath -WorkingDirectory $wd
+            }
+        } catch { }
+    })
+    [void]$tileMenu.Items.Add($tileLaunch)
+
+    [void]$tileMenu.Items.Add((New-Object System.Windows.Controls.Separator))
+
+    $tileOpenFolder = New-Object System.Windows.Controls.MenuItem
+    $tileOpenFolder.Header = "Open Folder in Explorer"
+    $tileOpenFolder.Tag = $Tool.ExePath
+    $tileOpenFolder.Add_Click({
+        $exePath = $this.Tag
+        $folder = Split-Path $exePath -Parent
+        if (Test-Path -LiteralPath $folder) {
+            Start-Process explorer.exe -ArgumentList "`"$folder`""
+        }
+    })
+    [void]$tileMenu.Items.Add($tileOpenFolder)
+
+    $tileCopyPath = New-Object System.Windows.Controls.MenuItem
+    $tileCopyPath.Header = "Copy Path to Clipboard"
+    $tileCopyPath.Tag = $Tool.ExePath
+    $tileCopyPath.Add_Click({
+        [System.Windows.Clipboard]::SetText($this.Tag)
+    })
+    [void]$tileMenu.Items.Add($tileCopyPath)
+
+    $border.ContextMenu = $tileMenu
 
     $stack = New-Object System.Windows.Controls.StackPanel
     $stack.HorizontalAlignment = 'Center'
@@ -2083,11 +2828,11 @@ function New-ToolTile {
         $fallback.FontSize = 32
         $fallback.HorizontalAlignment = 'Center'
         $fallback.Margin = New-Object System.Windows.Thickness(0, 4, 0, 6)
-        $stack.Children.Add($fallback)
+        [void]$stack.Children.Add($fallback)
     }
 
     if ($iconImage.Visibility -ne [System.Windows.Visibility]::Collapsed) {
-        $stack.Children.Add($iconImage)
+        [void]$stack.Children.Add($iconImage)
     }
 
     # Name label
@@ -2100,16 +2845,16 @@ function New-ToolTile {
     $label.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
     $label.MaxHeight = 34
     $label.HorizontalAlignment = 'Center'
-    $stack.Children.Add($label)
+    [void]$stack.Children.Add($label)
 
     # Category badge
     $catLabel = New-Object System.Windows.Controls.TextBlock
     $catLabel.Text = $Tool.Category
-    $catLabel.Foreground = $script:BrushConverter.ConvertFrom('#777777')
+    $catLabel.Foreground = $script:BrushConverter.ConvertFrom('#999999')
     $catLabel.FontSize = 9
     $catLabel.HorizontalAlignment = 'Center'
     $catLabel.Margin = New-Object System.Windows.Thickness(0, 2, 0, 0)
-    $stack.Children.Add($catLabel)
+    [void]$stack.Children.Add($catLabel)
 
     $border.Child = $stack
     return $border
@@ -2119,7 +2864,7 @@ function New-ToolTile {
 function Populate-DashboardTiles {
     param([string]$CategoryFilter = 'All', [string]$SearchFilter = '')
 
-    $icDashTools.Items.Clear()
+    $wpDashTools.Children.Clear()
 
     $filtered = $script:AllLaunchTools
     if ($CategoryFilter -ne 'All') {
@@ -2131,7 +2876,16 @@ function Populate-DashboardTiles {
 
     foreach ($tool in $filtered) {
         $tile = New-ToolTile -Tool $tool
-        $icDashTools.Items.Add($tile)
+        [void]$wpDashTools.Children.Add($tile)
+    }
+
+    # Update tool count label
+    $totalCount = @($script:AllLaunchTools).Count
+    $shownCount = @($filtered).Count
+    if ($shownCount -eq $totalCount) {
+        $txtDashToolCount.Text = "($totalCount)"
+    } else {
+        $txtDashToolCount.Text = "($shownCount of $totalCount)"
     }
 }
 
@@ -2182,13 +2936,14 @@ function Initialize-Dashboard {
             $btn.BorderBrush = [System.Windows.Media.Brushes]::Transparent
         }
 
-        $catName = $cat
+        $btn.Tag = $cat
         $btn.Add_Click({
-            $script:DashCurrentCategory = $catName
+            $clickedCat = $this.Tag
+            $script:DashCurrentCategory = $clickedCat
             # Update chip styling
             foreach ($k in $script:DashCatButtons.Keys) {
                 $b = $script:DashCatButtons[$k]
-                if ($k -eq $catName) {
+                if ($k -eq $clickedCat) {
                     $b.Background = $script:BrushConverter.ConvertFrom('#3A3A4A')
                     $b.Foreground = $script:BrushConverter.ConvertFrom('#FFFFFF')
                     $b.BorderBrush = $script:BrushConverter.ConvertFrom('#0078D4')
@@ -2199,11 +2954,11 @@ function Initialize-Dashboard {
                 }
             }
             $searchText = $txtDashSearch.Text
-            Populate-DashboardTiles -CategoryFilter $catName -SearchFilter $searchText
-        }.GetNewClosure())
+            Populate-DashboardTiles -CategoryFilter $clickedCat -SearchFilter $searchText
+        })
 
         $script:DashCatButtons[$cat] = $btn
-        $pnlDashCategories.Children.Add($btn)
+        [void]$pnlDashCategories.Children.Add($btn)
     }
 
     # Initial populate
@@ -2214,32 +2969,75 @@ function Initialize-Dashboard {
 
 # ── Download-page link handling ─────────────────────────────────────────────
 
-# Handle link-button clicks inside the DataGrid Status column (routed event)
+# Handle link-button and row-action clicks inside the DataGrid (routed event)
 $dgTools.AddHandler(
     [System.Windows.Controls.Primitives.ButtonBase]::ClickEvent,
     [System.Windows.RoutedEventHandler]{
         param($sender, $e)
         $element = $e.OriginalSource
         while ($element -ne $null) {
-            if ($element -is [System.Windows.Controls.Button] -and $element.Tag -eq 'OpenDownloadPage') {
+            if ($element -is [System.Windows.Controls.Button]) {
+                $tag = $element.Tag
                 $item = $element.DataContext
-                if ($item -and $item.DownloadUrl) {
-                    try {
-                        Start-Process $item.DownloadUrl
-                        Write-Log "Opened download page for $($item.Name): $($item.DownloadUrl)"
-                    } catch {
-                        Write-Log "ERROR: Failed to open URL: $($_.Exception.Message)"
+
+                if ($tag -eq 'OpenDownloadPage') {
+                    # Status column link click
+                    if ($item -and $item.DownloadUrl) {
+                        try {
+                            Start-Process $item.DownloadUrl
+                            Write-Log "Opened download page for $($item.Name): $($item.DownloadUrl)"
+                        } catch {
+                            Write-Log "ERROR: Failed to open URL: $($_.Exception.Message)"
+                        }
+                    } elseif ($item) {
+                        [System.Windows.MessageBox]::Show(
+                            "No download page URL is configured for '$($item.Name)'.",
+                            "No URL Available",
+                            [System.Windows.MessageBoxButton]::OK,
+                            [System.Windows.MessageBoxImage]::Information
+                        )
                     }
-                } elseif ($item) {
-                    [System.Windows.MessageBox]::Show(
-                        "No download page URL is configured for '$($item.Name)'.",
-                        "No URL Available",
-                        [System.Windows.MessageBoxButton]::OK,
-                        [System.Windows.MessageBoxImage]::Information
-                    )
+                    $e.Handled = $true
+                    break
                 }
-                $e.Handled = $true
-                break
+                elseif ($tag -eq 'RowAction') {
+                    # Per-row action button (Update / Open / Retry)
+                    if (-not $item) { break }
+
+                    if ($item.StatusKey -eq 'UpdateAvailable') {
+                        # One-click update for this single tool
+                        if ($script:ForensicModeActive) {
+                            [System.Windows.MessageBox]::Show(
+                                "Forensic Mode is active. Disable it first.",
+                                "Forensic Mode",
+                                [System.Windows.MessageBoxButton]::OK,
+                                [System.Windows.MessageBoxImage]::Warning
+                            )
+                        } else {
+                            # Select only this tool and start update
+                            foreach ($t in $script:ToolItems) { $t.IsSelected = $false }
+                            $item.IsSelected = $true
+                            $dgTools.Items.Refresh()
+                            Start-SelectedUpdates
+                        }
+                    }
+                    elseif ($item.StatusKey -eq 'ManualCheck') {
+                        # Open download page
+                        if ($item.DownloadUrl) {
+                            try { Start-Process $item.DownloadUrl } catch {}
+                            Write-Log "Opened download page for $($item.Name)"
+                        }
+                    }
+                    elseif ($item.StatusKey -eq 'Error') {
+                        # Retry: open download page or re-check
+                        if ($item.DownloadUrl) {
+                            try { Start-Process $item.DownloadUrl } catch {}
+                            Write-Log "Opened download page for retry: $($item.Name)"
+                        }
+                    }
+                    $e.Handled = $true
+                    break
+                }
             }
             try {
                 $element = [System.Windows.Media.VisualTreeHelper]::GetParent($element)
@@ -2280,10 +3078,51 @@ $menuOpenPage.Add_Click({
         )
     }
 })
-$script:GridContextMenu.Items.Add($menuOpenPage)
+[void]$script:GridContextMenu.Items.Add($menuOpenPage)
+
+# ── Open Folder in Explorer ──
+$menuOpenFolder = New-Object System.Windows.Controls.MenuItem
+$menuOpenFolder.Header = "Open Folder in Explorer"
+$menuOpenFolder.Add_Click({
+    $item = $dgTools.SelectedItem
+    if ($item -and $item.ToolPath) {
+        $fullPath = Join-Path $script:DriveRoot $item.ToolPath
+        # If it points to a file, open its parent folder; if a folder, open directly
+        if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+            $folder = Split-Path $fullPath -Parent
+        } else {
+            $folder = $fullPath
+        }
+        if (Test-Path -LiteralPath $folder) {
+            Start-Process explorer.exe -ArgumentList "`"$folder`""
+            Write-Log "Opened folder: $folder"
+        } else {
+            [System.Windows.MessageBox]::Show(
+                "Folder not found:`n$folder",
+                "Folder Not Found",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Warning
+            )
+        }
+    }
+})
+[void]$script:GridContextMenu.Items.Add($menuOpenFolder)
+
+# ── Copy Tool Path ──
+$menuCopyPath = New-Object System.Windows.Controls.MenuItem
+$menuCopyPath.Header = "Copy Path to Clipboard"
+$menuCopyPath.Add_Click({
+    $item = $dgTools.SelectedItem
+    if ($item -and $item.ToolPath) {
+        $fullPath = Join-Path $script:DriveRoot $item.ToolPath
+        [System.Windows.Clipboard]::SetText($fullPath)
+        Write-Log "Copied path to clipboard: $fullPath"
+    }
+})
+[void]$script:GridContextMenu.Items.Add($menuCopyPath)
 
 # ── Separator ──
-$script:GridContextMenu.Items.Add((New-Object System.Windows.Controls.Separator))
+[void]$script:GridContextMenu.Items.Add((New-Object System.Windows.Controls.Separator))
 
 # ── Helper: update current_version in tools-config.json ──
 function Save-ToolVersion {
@@ -2360,7 +3199,7 @@ $menuMarkUpdated.Add_Click({
         )
     }
 })
-$script:GridContextMenu.Items.Add($menuMarkUpdated)
+[void]$script:GridContextMenu.Items.Add($menuMarkUpdated)
 
 # ── Set Version (let the user type any version) ──
 $menuSetVersion = New-Object System.Windows.Controls.MenuItem
@@ -2411,7 +3250,35 @@ $menuSetVersion.Add_Click({
         )
     }
 })
-$script:GridContextMenu.Items.Add($menuSetVersion)
+[void]$script:GridContextMenu.Items.Add($menuSetVersion)
+
+# ── Separator ──
+[void]$script:GridContextMenu.Items.Add((New-Object System.Windows.Controls.Separator))
+
+# ── Copy Tool Details (for troubleshooting) ──
+$menuCopyDetails = New-Object System.Windows.Controls.MenuItem
+$menuCopyDetails.Header = "Copy Details to Clipboard"
+$menuCopyDetails.Add_Click({
+    $item = $dgTools.SelectedItem
+    if ($item) {
+        $details = [System.Text.StringBuilder]::new()
+        [void]$details.AppendLine("Tool:      $($item.Name)")
+        [void]$details.AppendLine("Category:  $($item.Category)")
+        [void]$details.AppendLine("Path:      $($item.ToolPath)")
+        [void]$details.AppendLine("Source:    $($item.SourceType)")
+        [void]$details.AppendLine("Install:   $($item.InstallType)")
+        [void]$details.AppendLine("Current:   $($item.CurrentVersion)")
+        [void]$details.AppendLine("Latest:    $($item.LatestVersion)")
+        [void]$details.AppendLine("Status:    $($item.Status)")
+        [void]$details.AppendLine("URL:       $($item.DownloadUrl)")
+        if ($item.Notes) {
+            [void]$details.AppendLine("Notes:     $($item.Notes)")
+        }
+        [System.Windows.Clipboard]::SetText($details.ToString())
+        Write-Log "Copied details for '$($item.Name)' to clipboard."
+    }
+})
+[void]$script:GridContextMenu.Items.Add($menuCopyDetails)
 
 $dgTools.ContextMenu = $script:GridContextMenu
 
@@ -2443,6 +3310,77 @@ $btnUpdateSelected.Add_Click({
     Start-SelectedUpdates
 })
 
+# Update All (one-click: auto-select all updatable tools, then run)
+$btnUpdateAll.Add_Click({
+    if ($script:ForensicModeActive) {
+        [System.Windows.MessageBox]::Show(
+            "Forensic Mode is active.`nDisable Forensic Mode before updating tools.",
+            "Forensic Mode",
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Warning
+        )
+        return
+    }
+
+    $updatable = @($script:ToolItems | Where-Object { $_.StatusKey -eq "UpdateAvailable" })
+    if ($updatable.Count -eq 0) {
+        [System.Windows.MessageBox]::Show(
+            "No updates available.`nAll tools are up to date.",
+            "All Current",
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Information
+        )
+        return
+    }
+
+    $confirm = [System.Windows.MessageBox]::Show(
+        "Update all $($updatable.Count) tool(s) with available updates?`n`n$(($updatable | ForEach-Object { "  - $($_.Name): $($_.CurrentVersion) -> $($_.LatestVersion)" }) -join "`n")",
+        "Update All",
+        [System.Windows.MessageBoxButton]::YesNo,
+        [System.Windows.MessageBoxImage]::Question
+    )
+    if ($confirm -ne [System.Windows.MessageBoxResult]::Yes) { return }
+
+    # Select all updatable tools and start update
+    foreach ($item in $script:ToolItems) {
+        $item.IsSelected = ($item.StatusKey -eq "UpdateAvailable")
+    }
+    $dgTools.Items.Refresh()
+    Start-SelectedUpdates
+})
+
+# Cancel Update
+$btnCancelUpdate.Add_Click({
+    if ($script:CancelFlag) {
+        $script:CancelFlag.Cancelled = $true
+        $script:UpdateCancelRequested = $true
+        $btnCancelUpdate.IsEnabled = $false
+        $btnCancelUpdate.Content = "Cancelling..."
+        Write-Log "Cancel requested - finishing current tool, then stopping..."
+        Set-StatusText "Cancelling update..."
+    }
+})
+
+# Retry Failed
+$btnRetryFailed.Add_Click({
+    $btnRetryFailed.Visibility = [System.Windows.Visibility]::Collapsed
+    # Select all tools that failed in the last update run
+    $failedItems = @($script:ToolItems | Where-Object { $_.Status -eq "Update failed" -and $_.StatusKey -eq "Error" })
+    if ($failedItems.Count -eq 0) {
+        Write-Log "No failed tools to retry."
+        return
+    }
+    foreach ($item in $script:ToolItems) { $item.IsSelected = $false }
+    foreach ($item in $failedItems) {
+        $item.IsSelected = $true
+        $item.StatusKey  = "UpdateAvailable"
+        $item.Status     = "Update available"
+    }
+    $dgTools.Items.Refresh()
+    Write-Log "Retrying $($failedItems.Count) failed tool(s)..."
+    Start-SelectedUpdates
+})
+
 # Refresh
 $btnRefresh.Add_Click({
     Start-UpdateCheck
@@ -2451,6 +3389,7 @@ $btnRefresh.Add_Click({
 # ── Navigation button handlers ──
 $btnNavDashboard.Add_Click({ Set-ActivePanel "Dashboard" })
 $btnNavUpdates.Add_Click({ Set-ActivePanel "Updates" })
+$btnNavReferences.Add_Click({ Set-ActivePanel "References" })
 $btnNavSettings.Add_Click({ Set-ActivePanel "Settings" })
 
 # ── Dashboard: Search placeholder behavior ──
@@ -2477,7 +3416,7 @@ $txtDashSearch.Add_TextChanged({
     if ($script:AllLaunchTools) {
         Populate-DashboardTiles -CategoryFilter $script:DashCurrentCategory -SearchFilter $searchText
     }
-}.GetNewClosure())
+})
 
 # ── Dashboard: Refresh button rescans the drive ──
 $btnDashRefresh.Add_Click({
@@ -2490,7 +3429,7 @@ $btnDashRefresh.Add_Click({
     } catch {
         Write-Log "ERROR: Dashboard refresh failed: $($_.Exception.Message)"
     }
-}.GetNewClosure())
+})
 
 # ── Settings: Scan for New Tools ──
 $btnScanNewToolsSettings.Add_Click({
@@ -2626,6 +3565,128 @@ $btnForensicReportSettings.Add_Click({
     }
 })
 
+# ── Settings: Export Tool List as CSV ──
+$btnExportCsv.Add_Click({
+    if ($script:ToolItems.Count -eq 0) {
+        [System.Windows.MessageBox]::Show(
+            "No tools loaded. Run an update check first to populate the tool list.",
+            "No Data",
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Information
+        )
+        return
+    }
+
+    $timestamp = Get-Date -Format 'yyyy-MM-dd_HHmmss'
+    $exportDir = Join-Path $script:ScriptDir 'exports'
+    if (-not (Test-Path -LiteralPath $exportDir)) {
+        [void](New-Item -Path $exportDir -ItemType Directory -Force)
+    }
+    $csvPath = Join-Path $exportDir "DFIR-Tools_$timestamp.csv"
+
+    try {
+        $rows = @()
+        foreach ($item in $script:ToolItems) {
+            $rows += [PSCustomObject]@{
+                Name           = $item.Name
+                Category       = $item.Category
+                CurrentVersion = $item.CurrentVersion
+                LatestVersion  = $item.LatestVersion
+                Status         = $item.Status
+                SourceType     = $item.SourceType
+                InstallType    = $item.InstallType
+                Path           = $item.ToolPath
+                DownloadUrl    = $item.DownloadUrl
+                Notes          = $item.Notes
+            }
+        }
+        $rows | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
+
+        Write-Log "Exported $($rows.Count) tools to: $csvPath"
+        $result = [System.Windows.MessageBox]::Show(
+            "Tool list exported to:`n$csvPath`n`nWould you like to open it?",
+            "Export Complete",
+            [System.Windows.MessageBoxButton]::YesNo,
+            [System.Windows.MessageBoxImage]::Information
+        )
+        if ($result -eq [System.Windows.MessageBoxResult]::Yes) {
+            Start-Process $csvPath
+        }
+    } catch {
+        Write-Log "ERROR: CSV export failed: $($_.Exception.Message)"
+        [System.Windows.MessageBox]::Show(
+            "Export failed:`n$($_.Exception.Message)",
+            "Export Error",
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Error
+        )
+    }
+})
+
+# ── Settings: Open Config File ──
+$btnOpenConfig.Add_Click({
+    if (Test-Path -LiteralPath $script:ConfigPath) {
+        Start-Process notepad.exe -ArgumentList "`"$script:ConfigPath`""
+        Write-Log "Opened config file: $script:ConfigPath"
+    } else {
+        [System.Windows.MessageBox]::Show(
+            "Config file not found:`n$script:ConfigPath",
+            "File Not Found",
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Warning
+        )
+    }
+})
+
+# ── Settings: Unblock All Tools ──
+$btnUnblockAll.Add_Click({
+    if ($script:ForensicModeActive) {
+        $txtUnblockResult.Text = "Cannot unblock files while Forensic Mode is active."
+        $txtUnblockResult.Foreground = $script:BrushConverter.ConvertFrom('#FF4444')
+        return
+    }
+
+    $btnUnblockAll.IsEnabled = $false
+    $btnUnblockAll.Content = "Unblocking..."
+    $count = 0
+    $errors = 0
+
+    try {
+        # Scan all category folders for executables with MOTW
+        $categoryDirs = @('01_Acquisition','02_Analysis','03_Network','04_Mobile-Forensics','08_Utilities')
+        foreach ($catDir in $categoryDirs) {
+            $fullDir = Join-Path $script:DriveRoot $catDir
+            if (-not (Test-Path -LiteralPath $fullDir)) { continue }
+
+            $exes = @(Get-ChildItem -Path $fullDir -Filter '*.exe' -Recurse -File -ErrorAction SilentlyContinue)
+            foreach ($exe in $exes) {
+                try {
+                    $zone = Get-Content -LiteralPath $exe.FullName -Stream Zone.Identifier -ErrorAction SilentlyContinue
+                    if ($zone) {
+                        Remove-Item -LiteralPath $exe.FullName -Stream Zone.Identifier -ErrorAction Stop
+                        $count++
+                    }
+                } catch {
+                    $errors++
+                }
+            }
+        }
+
+        $msg = "Unblocked $count file(s)."
+        if ($errors -gt 0) { $msg += " $errors file(s) could not be unblocked." }
+        $txtUnblockResult.Text = $msg
+        $txtUnblockResult.Foreground = $script:BrushConverter.ConvertFrom($(if ($errors -gt 0) { '#FFD93D' } else { '#4CAF50' }))
+        Write-Log "Unblock All: $msg"
+    } catch {
+        $txtUnblockResult.Text = "Error: $($_.Exception.Message)"
+        $txtUnblockResult.Foreground = $script:BrushConverter.ConvertFrom('#FF4444')
+        Write-Log "ERROR: Unblock All failed: $($_.Exception.Message)"
+    } finally {
+        $btnUnblockAll.IsEnabled = $true
+        $btnUnblockAll.Content = "Unblock All Tools"
+    }
+})
+
 # ── Settings: Forensic Mode Toggle ──
 $btnForensicToggleSettings.Add_Click({
     Toggle-ForensicMode
@@ -2642,10 +3703,65 @@ $btnToggleLog.Add_Unchecked({
     $btnToggleLog.Content = [char]0x25B6 + " Log"
 })
 
+# ─── Keyboard Shortcuts ──────────────────────────────────────────────────────
+$window.Add_PreviewKeyDown({
+    param($sender, $e)
+    $ctrl = [System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control
+
+    # Don't intercept when a TextBox has focus (let typing work normally)
+    $focused = [System.Windows.Input.FocusManager]::GetFocusedElement($window)
+    $inTextBox = $focused -is [System.Windows.Controls.TextBox]
+
+    if ($ctrl) {
+        switch ($e.Key) {
+            'D1' { Set-ActivePanel "Dashboard";  $e.Handled = $true }   # Ctrl+1
+            'D2' { Set-ActivePanel "Updates";    $e.Handled = $true }   # Ctrl+2
+            'D3' { Set-ActivePanel "References"; $e.Handled = $true }   # Ctrl+3
+            'D4' { Set-ActivePanel "Settings";   $e.Handled = $true }   # Ctrl+4
+            'R'  {                                                      # Ctrl+R  Refresh
+                if (-not $inTextBox -and -not $script:ForensicModeActive) {
+                    Start-UpdateCheck; $e.Handled = $true
+                }
+            }
+            'F'  {                                                      # Ctrl+F  Focus search
+                if (-not $inTextBox) {
+                    Set-ActivePanel "Dashboard"
+                    $txtDashSearch.Focus()
+                    if ($txtDashSearch.Text -eq 'Search tools...') {
+                        $txtDashSearch.Text = ''
+                        $txtDashSearch.Foreground = $script:BrushConverter.ConvertFrom('#FFFFFF')
+                    }
+                    $e.Handled = $true
+                }
+            }
+            'L'  {                                                      # Ctrl+L  Toggle log
+                if (-not $inTextBox) {
+                    $btnToggleLog.IsChecked = -not $btnToggleLog.IsChecked
+                    $e.Handled = $true
+                }
+            }
+        }
+    } else {
+        switch ($e.Key) {
+            'F5' {                                                      # F5  Check for updates
+                if (-not $script:ForensicModeActive) {
+                    Start-UpdateCheck; $e.Handled = $true
+                }
+            }
+            'Escape' {                                                  # Esc  Clear search / unfocus
+                if ($inTextBox) {
+                    $txtDashSearch.Text = ''
+                    $window.Focus()
+                    $e.Handled = $true
+                }
+            }
+        }
+    }
+})
+
 # ─── Window Loaded: Kick Off Initial Check ──────────────────────────────────
 $window.Add_Loaded({
     try {
-        Write-Host "[DIAG] Window.Loaded fired" -ForegroundColor Cyan
         Write-Log "DFIR Drive Updater initialized."
         Write-Log "Drive root: $script:DriveRoot"
         if (-not $script:HasModule) {
@@ -2660,8 +3776,17 @@ $window.Add_Loaded({
             try {
                 Initialize-Dashboard
             } catch {
+                Write-Host "[DIAG] Dashboard init FAILED: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "[DIAG] $($_.ScriptStackTrace)" -ForegroundColor Red
                 Write-Log "Dashboard init failed: $($_.Exception.Message)"
             }
+        }
+
+        # Initialize Linux/macOS references panel
+        try {
+            Initialize-LinuxReferences
+        } catch {
+            Write-Log "References panel init failed: $($_.Exception.Message)"
         }
 
         # Set initial forensic mode UI
@@ -2683,6 +3808,19 @@ $window.Add_Loaded({
 
         # Show drive info in Settings
         $txtDrivePathSettings.Text = "Drive: $script:DriveRoot"
+        $txtToolCountSettings.Text = "Tools: $($script:ToolItems.Count) tracked in config"
+        Update-DriveSpaceInfo
+
+        # Detect available package managers
+        if ($script:HasPkgManager) {
+            $pms = Get-AvailablePackageManagers
+            if ($pms.Count -gt 0) {
+                $pmNames = ($pms | ForEach-Object { "$($_.Name) $($_.Version)" }) -join ', '
+                Write-Log "Package managers available: $pmNames"
+            } else {
+                Write-Log "No package managers detected (winget, scoop, choco). Using direct download for updates."
+            }
+        }
     } catch {
         # Ensure the GUI is usable even if initialization fails
         Write-Host "[DIAG] ERROR in Window.Loaded: $($_.Exception.Message)" -ForegroundColor Red
@@ -2703,15 +3841,13 @@ $window.Add_Loaded({
 # never access UI/COM elements directly.  STA requires a running message
 # pump; calling Open() in STA *before* the WPF message loop starts will
 # hang the process indefinitely, which is the primary freeze root-cause.
-Write-Host "[DIAG] Creating background runspace pool..." -ForegroundColor Cyan
 $script:RunspacePool = $null
 try {
     $script:RunspacePool = [RunspaceFactory]::CreateRunspacePool(1, 2)
     $script:RunspacePool.ApartmentState = [System.Threading.ApartmentState]::MTA
     $script:RunspacePool.Open()
-    Write-Host "[DIAG] Runspace pool ready" -ForegroundColor Green
 } catch {
-    Write-Host "[DIAG] RunspacePool creation failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Log "ERROR: RunspacePool creation failed: $($_.Exception.Message)"
 }
 
 # Clean up pool when window closes
@@ -2730,11 +3866,36 @@ $window.Add_Closed({
 try {
     $app = [System.Windows.Application]::new()
     $app.ShutdownMode = [System.Windows.ShutdownMode]::OnMainWindowClose
-    Write-Host "[DIAG] Using Application.Run() for WPF message pump" -ForegroundColor Green
+    # Catch unhandled exceptions inside WPF message pump to prevent silent crashes
+    $app.Add_DispatcherUnhandledException({
+        param($sender, $e)
+        $msg = $e.Exception.Message
+        $src = $e.Exception.Source
+        $stk = $e.Exception.StackTrace
+        $inner = if ($e.Exception.InnerException) { $e.Exception.InnerException.Message } else { '' }
+
+        Write-Host "[DIAG] WPF unhandled exception: $msg" -ForegroundColor Red
+        Write-Host "[DIAG] Source: $src" -ForegroundColor Red
+        Write-Host "[DIAG] Stack: $stk" -ForegroundColor Red
+        if ($inner) { Write-Host "[DIAG] Inner: $inner" -ForegroundColor Red }
+
+        # Write to debug log file
+        Write-DebugLog "UNHANDLED EXCEPTION: $msg" 'ERROR'
+        Write-DebugLog "  Source: $src" 'ERROR'
+        Write-DebugLog "  Stack: $stk" 'ERROR'
+        if ($inner) { Write-DebugLog "  Inner: $inner" 'ERROR' }
+
+        $e.Handled = $true  # Prevent crash, keep GUI running
+    })
     [void]$app.Run($window)
 } catch {
     # Fallback if Application already exists or other issue
     Write-Host "[DIAG] Application.Run failed: $($_.Exception.Message), using Dispatcher.Run fallback" -ForegroundColor Yellow
+    Write-DebugLog "Application.Run failed: $($_.Exception.Message) - using Dispatcher.Run fallback" 'WARN'
+    if ($_.Exception.InnerException) {
+        Write-Host "[DIAG] Inner: $($_.Exception.InnerException.Message)" -ForegroundColor Red
+        Write-DebugLog "  Inner: $($_.Exception.InnerException.Message)" 'WARN'
+    }
     $window.Add_Closed({
         [System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeShutdown()
     })
