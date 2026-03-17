@@ -1,0 +1,89 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in DFIR-Updater.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug. Please fill out the information below to help us investigate.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of the bug.
+      placeholder: Describe the issue...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the behavior.
+      placeholder: |
+        1. Open DFIR-Updater
+        2. Navigate to '...'
+        3. Click on '...'
+        4. Observe error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened.
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS Version
+      description: Your Windows version (e.g., Windows 11 Pro 23H2).
+      placeholder: Windows 11 Pro 23H2
+    validations:
+      required: true
+
+  - type: input
+    id: ps-version
+    attributes:
+      label: PowerShell Version
+      description: "Output of: $PSVersionTable.PSVersion"
+      placeholder: "5.1.22621.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: run-method
+    attributes:
+      label: How are you running DFIR-Updater?
+      options:
+        - Compiled .exe from Releases
+        - PowerShell script directly
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Log Output
+      description: Paste any relevant output from debug.log or error messages.
+      render: text
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other information that might be helpful.

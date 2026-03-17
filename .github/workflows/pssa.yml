@@ -1,0 +1,48 @@
+name: PSScriptAnalyzer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint PowerShell Scripts
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer module
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $results = Get-ChildItem -Path . -Filter *.ps1 -Recurse |
+            Where-Object { $_.FullName -notlike '*\dist\*' } |
+            ForEach-Object {
+              Write-Host "Analyzing: $($_.FullName)" -ForegroundColor Cyan
+              Invoke-ScriptAnalyzer -Path $_.FullName -Severity @('Error', 'Warning', 'Information')
+            }
+
+          if ($results) {
+            $results | Format-Table -AutoSize
+            $errors = $results | Where-Object { $_.Severity -eq 'Error' }
+            if ($errors) {
+              Write-Host "`n$($errors.Count) error(s) found. Failing the build." -ForegroundColor Red
+              exit 1
+            } else {
+              Write-Host "`nNo errors found. $($results.Count) warning(s)/informational issue(s) reported." -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "No issues found." -ForegroundColor Green
+          }

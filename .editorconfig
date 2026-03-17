@@ -1,0 +1,57 @@
+# EditorConfig for DFIR-Updater
+# https://editorconfig.org
+
+root = true
+
+# Default settings for all files
+[*]
+charset = utf-8
+end_of_line = crlf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# PowerShell scripts - UTF-8 with BOM (required by Windows PowerShell 5.1
+# for correct parsing of Unicode characters in scripts)
+[*.ps1]
+charset = utf-8-bom
+end_of_line = crlf
+indent_style = space
+indent_size = 4
+
+# PowerShell module manifests and data files
+[*.psd1]
+charset = utf-8-bom
+end_of_line = crlf
+indent_style = space
+indent_size = 4
+
+# PowerShell module files
+[*.psm1]
+charset = utf-8-bom
+end_of_line = crlf
+indent_style = space
+indent_size = 4
+
+# Markdown - preserve trailing whitespace (used for line breaks in MD)
+[*.md]
+charset = utf-8
+trim_trailing_whitespace = false
+
+# YAML configuration files
+[*.{yml,yaml}]
+indent_size = 2
+
+# JSON configuration files
+[*.json]
+indent_size = 2
+
+# Batch files
+[*.{bat,cmd}]
+charset = utf-8
+end_of_line = crlf
+
+# XML / XAML
+[*.{xml,xaml}]
+indent_size = 4

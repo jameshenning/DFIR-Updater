@@ -43,6 +43,14 @@ dist/
 # ── Forensic reports (machine-specific) ───────────────────────────────────
 forensic-reports/
 
+# ── IDE / Editor settings (user-specific, not project config) ────────────
+.vscode/
+.idea/
+*.code-workspace
+*.suo
+*.user
+*.sln.docstates
+
 # ── Claude Code local config ──────────────────────────────────────────────
 .claude/
 
@@ -53,6 +61,27 @@ write-protect-logs/
 
 # The lockfile state is per-machine — do not track
 FORENSIC_MODE
+
+# ── Downloaded binaries (should not be committed) ────────────────────────
+# Executables in the repo root are likely downloaded tools, not source
+/*.exe
+/*.msi
+/*.zip
+
+# ── PSScriptAnalyzer output ──────────────────────────────────────────────
+PSScriptAnalyzerResults.xml
+PSScriptAnalyzerResults.json
+
+# ── Certificate and key files (security) ─────────────────────────────────
+*.pfx
+*.pem
+*.key
+*.cer
+
+# ── Environment and secrets files ────────────────────────────────────────
+.env
+.env.*
+secrets.json
 
 # =============================================================================
 # DO NOT ignore these files -- they are part of the framework:
