@@ -4,6 +4,7 @@
 [![PowerShell 5.1+](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![GitHub Release](https://img.shields.io/github/v/release/jameshenning/DFIR-Updater?label=Release)](https://github.com/jameshenning/DFIR-Updater/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/jameshenning/DFIR-Updater/build.yml?label=Build)](https://github.com/jameshenning/DFIR-Updater/actions/workflows/build.yml)
 
 A portable, self-contained update manager for DFIR (Digital Forensics & Incident Response) USB toolkits. Plug in your drive, and it automatically checks for updates to your forensic tools -- then lets you pick which ones to update with a single click. No installation required.
 
@@ -34,11 +35,13 @@ A portable, self-contained update manager for DFIR (Digital Forensics & Incident
   - [Forensic Mode](#forensic-mode)
   - [Write Protection](#write-protection)
   - [Forensic Cleanup](#forensic-cleanup)
+  - [Silent / Headless Mode](#silent--headless-mode)
 - [Project Structure](#project-structure)
 - [Building from Source](#building-from-source)
 - [Configuration](#configuration)
   - [tools-config.json](#tools-configjson)
   - [Adding a Tool Manually](#adding-a-tool-manually)
+- [Architecture](#architecture)
 - [Contributing](#contributing)
 - [License](#license)
 - [Acknowledgments](#acknowledgments)
@@ -50,13 +53,26 @@ A portable, self-contained update manager for DFIR (Digital Forensics & Incident
 **Automatic Update Management**
 
 - Queries GitHub releases for 49+ tracked DFIR tools and compares versions automatically
+- Parallel version checking via RunspacePool -- checks multiple tools concurrently for faster results
 - Selective updates via checkboxes -- choose exactly which tools to update
 - Backup and rollback on every update; automatic restore on failure
 - Supports multiple install types: zip extraction, 7z extraction, single-exe copy, and manual instructions
+- Package manager integration (winget, scoop) with automatic fallback to direct download
+- Tool-native update commands -- runs `--sync`, `--update-rules`, etc. after installation for tools that support it
+- Ancillary config updates -- downloads KAPE targets/modules, EvtxECmd maps, and YARA rules alongside tool binaries
+
+**Integrity and Verification**
+
+- SHA-256 hash verification of downloads against GitHub release notes (for tools that publish hashes)
+- PE version auto-detection -- reads installed versions directly from executable metadata via `FileVersionInfo`
+- ETag caching for web-sourced tools -- skips unnecessary downloads when remote files have not changed
+- Network pre-flight connectivity check before starting update cycles
+- Self-update notifications -- checks for new DFIR-Updater releases on startup
 
 **Professional WPF GUI**
 
 - Dark-themed interface with color-coded status rows (green = current, yellow = update available, gray = manual check)
+- Sidebar navigation with Dashboard, Tools, Tool Launcher, and Settings panels
 - Real-time progress bar and scrolling log panel
 - Right-click context menu for per-tool actions (open download page, set custom version)
 
@@ -77,11 +93,14 @@ A portable, self-contained update manager for DFIR (Digital Forensics & Incident
 - Fully portable on any Windows 10/11 machine with no installation
 - Auto-launch via Windows Task Scheduler on USB plug-in (Event ID 112)
 - Dynamic drive detection by volume label -- works regardless of assigned drive letter
+- Silent / headless mode for scheduled, unattended update runs from Task Scheduler or scripts
 
 **Forensic Integrity**
 
 - Forensic Mode blocks all updater activity via a lockfile while keeping DFIR tools fully functional
 - Write Protection sets a disk-level readonly attribute to prevent any program from writing to the drive
+- Automatic UAC elevation for write protection -- prompts for admin privileges when needed
+- Forensic integrity report auto-generated on mode activation (disk info, tool hashes, chain-of-custody fields)
 - Forensic Cleanup securely removes updater artifacts from a target computer (zero-overwrite deletion)
 - All write protection toggles are logged with timestamps, computer name, and username for audit trails
 
@@ -203,6 +222,43 @@ If the updater ran on a target computer before Forensic Mode was enabled, use `F
 
 The script scans for temp files, prefetch entries, recent file shortcuts, and event log entries. Found files are securely deleted with zero-overwrite before removal.
 
+### Silent / Headless Mode
+
+For scheduled or unattended operation, use `Invoke-SilentUpdateCheck` from the Self-Updater module. This runs the full update check without launching the GUI.
+
+```powershell
+# Check for updates and display results in the console
+powershell -ExecutionPolicy Bypass -Command "
+    . D:\DFIR-Updater\modules\Update-Checker.ps1
+    . D:\DFIR-Updater\modules\Self-Updater.ps1
+    Invoke-SilentUpdateCheck -DriveRoot 'D:\' -ConfigPath 'D:\DFIR-Updater\tools-config.json'
+"
+
+# Auto-install all available updates (unattended)
+powershell -ExecutionPolicy Bypass -Command "
+    . D:\DFIR-Updater\modules\Update-Checker.ps1
+    . D:\DFIR-Updater\modules\Self-Updater.ps1
+    Invoke-SilentUpdateCheck -DriveRoot 'D:\' -ConfigPath 'D:\DFIR-Updater\tools-config.json' -UpdateAll
+"
+
+# Save results to a log file
+powershell -ExecutionPolicy Bypass -Command "
+    . D:\DFIR-Updater\modules\Update-Checker.ps1
+    . D:\DFIR-Updater\modules\Self-Updater.ps1
+    Invoke-SilentUpdateCheck -DriveRoot 'D:\' -ConfigPath 'D:\DFIR-Updater\tools-config.json' -LogPath 'D:\DFIR-Updater\update-log.txt'
+"
+```
+
+Parameters:
+
+| Parameter | Description |
+|---|---|
+| `-DriveRoot` | Root path of the DFIR drive (e.g., `D:\`) |
+| `-ConfigPath` | Path to `tools-config.json` |
+| `-LogPath` | Optional. Write results to a log file |
+| `-GitHubToken` | Optional. GitHub personal access token for higher API rate limits |
+| `-UpdateAll` | Switch. Automatically install all available updates |
+
 ---
 
 ## Project Structure
@@ -234,11 +290,14 @@ D:\
     ├── Write-Protect.ps1            Write protection logic
     ├── Create-Shortcuts.ps1         Generate .lnk shortcuts for tools
     ├── scan-manifest.json           Auto-discovery tracking (generated)
+    ├── VERSION                      Current application version
     └── modules\
         ├── Update-Checker.ps1       GitHub API, version comparison, downloads
         ├── Auto-Discovery.ps1       New tool detection and identification
         ├── Tool-Launcher.ps1        Drive scanning for Tool Launcher
-        └── Package-Manager.ps1      Package manager integration
+        ├── Package-Manager.ps1      Package manager integration
+        ├── Integrity-Checker.ps1    Hash verification, PE version detection, ETag caching
+        └── Self-Updater.ps1         Self-update and silent/headless mode
 ```
 
 ---
@@ -290,10 +349,27 @@ Each tool entry uses this schema:
 | `github_repo` | GitHub `owner/repo` string (e.g., `"hashcat/hashcat"`). `null` for web-sourced tools. |
 | `github_asset_pattern` | Regex to match the correct download file from GitHub release assets. `null` for web-sourced tools. |
 | `download_url` | Vendor download page URL for web-sourced tools. `null` for GitHub-sourced tools. |
+| `download_url_template` | URL with `{version}` placeholder for version-specific downloads (e.g., `"https://exiftool.org/exiftool-{version}_64.zip"`). |
 | `current_version` | Version string currently installed on the drive. Updated automatically after a successful update. |
 | `version_pattern` | Regex with a capture group to extract version numbers from release tags or filenames. |
+| `version_check_url` | Separate URL for scraping the latest version (when different from the download page). |
 | `install_type` | Installation method: `"extract_zip"`, `"extract_7z"`, `"copy_exe"`, or `"manual"`. |
+| `winget_id` | Windows Package Manager ID (e.g., `"hashcat.hashcat"`). Used as primary update source when available. |
+| `scoop_id` | Scoop package ID (e.g., `"main/hashcat"`). Preferred for portable installs. |
+| `native_update_cmd` | Command the tool supports for self-updating (e.g., `"EvtxECmd.exe --sync"`). Runs after installation. |
+| `hash_verify` | `true` to attempt SHA-256 verification from GitHub release notes after download. |
+| `ancillary_configs` | Array of additional config/rule files to update alongside the tool (see below). |
 | `notes` | Free-text notes displayed in the GUI. |
+
+**Ancillary config entries** (used in the `ancillary_configs` array):
+
+| Field | Description |
+|---|---|
+| `name` | Display name (e.g., `"KAPE Targets"`). |
+| `source_type` | `"github"` or `"url"`. |
+| `source` | GitHub `owner/repo` string or direct URL. |
+| `destination` | Subdirectory within the tool's install path. |
+| `type` | Category label (e.g., `"modules"`, `"rules"`, `"maps"`). |
 
 **Example entry:**
 
@@ -308,13 +384,75 @@ Each tool entry uses this schema:
   "current_version": "6.2.6",
   "version_pattern": "hashcat-([\\d.]+)",
   "install_type": "extract_7z",
+  "winget_id": "hashcat.hashcat",
+  "scoop_id": "main/hashcat",
+  "hash_verify": true,
   "notes": "Released as .7z archive on GitHub."
+}
+```
+
+**Example with ancillary configs (KAPE):**
+
+```json
+{
+  "name": "KAPE",
+  "path": "01_Acquisition/KAPE",
+  "source_type": "web",
+  "native_update_cmd": "kape.exe --update",
+  "ancillary_configs": [
+    {
+      "name": "KAPE Targets",
+      "source_type": "github",
+      "source": "EricZimmerman/KapeFiles",
+      "destination": "Targets",
+      "type": "modules"
+    },
+    {
+      "name": "KAPE Modules",
+      "source_type": "github",
+      "source": "EricZimmerman/KapeFiles",
+      "destination": "Modules",
+      "type": "modules"
+    }
+  ]
 }
 ```
 
 ### Adding a Tool Manually
 
 Add a new JSON object to the `tools` array in `tools-config.json`, or use the **Scan for New Tools** button in the GUI for automatic detection and one-click addition.
+
+---
+
+## Architecture
+
+DFIR-Updater is built as a modular PowerShell application with a WPF GUI frontend. Each module handles a specific responsibility:
+
+| Module | Responsibility |
+|---|---|
+| `DFIR-Updater-GUI.ps1` | WPF interface, event handling, RunspacePool management, forensic mode toggle |
+| `Update-Checker.ps1` | GitHub API queries, web scraping, version comparison, download/install with backup and rollback, parallel checking, tool-native commands, ancillary configs |
+| `Auto-Discovery.ps1` | Drive scanning, tool identification against 133+ known DFIR repos, config generation |
+| `Tool-Launcher.ps1` | Executable discovery, icon extraction, PortableApps integration |
+| `Package-Manager.ps1` | winget/scoop/chocolatey detection, unified install and version query interface |
+| `Integrity-Checker.ps1` | PE metadata version extraction, SHA-256 hash verification, ETag caching, network connectivity testing |
+| `Self-Updater.ps1` | Self-update from GitHub releases, headless/silent update mode for scheduled runs |
+
+**Update flow:**
+
+1. On startup, the GUI loads all modules and checks for DFIR-Updater self-updates.
+2. A network pre-flight check validates connectivity to GitHub and the internet.
+3. `Start-UpdateCheck` spawns a background RunspacePool that queries GitHub API and web sources in parallel.
+4. Results are dispatched back to the WPF UI thread via `Dispatcher.BeginInvoke`.
+5. When the user triggers an update, the system tries package managers first (scoop > winget), then falls back to direct download.
+6. Each update creates a timestamped backup, extracts/copies the new version, runs any `native_update_cmd`, and updates `ancillary_configs`.
+7. On failure, the backup is automatically restored.
+
+**CI/CD:**
+
+- Every push to `main` triggers a build workflow that compiles the `.exe` via PS2EXE.
+- Pushing a version tag (e.g., `v1.1.0`) triggers an automatic GitHub Release with the `.exe` and portable `.zip` attached.
+- PSScriptAnalyzer runs on all `.ps1` files for every push and pull request.
 
 ---
 
@@ -327,7 +465,7 @@ Contributions are welcome. To get started:
 3. Make your changes and test them on a DFIR USB drive.
 4. Submit a pull request with a clear description of the changes.
 
-Please ensure that any new tool entries added to `tools-config.json` include all required fields and valid regex patterns.
+Please ensure that any new tool entries added to `tools-config.json` include all required fields and valid regex patterns. See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
@@ -344,3 +482,4 @@ This project is distributed under the MIT License. See [LICENSE](LICENSE) for de
 - GUI built with Windows Presentation Foundation (WPF).
 - Standalone `.exe` compilation powered by [PS2EXE](https://github.com/MScholtes/PS2EXE).
 - Auto-discovery database covers 133+ known DFIR repositories from the open-source forensics community.
+- Inspired by [MemProcFS-Analyzer Updater](https://github.com/LETHAL-FORENSICS/MemProcFS-Analyzer) and [KAPE-EZToolsAncillaryUpdater](https://github.com/AndrewRathbun/KAPE-EZToolsAncillaryUpdater).
