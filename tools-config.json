@@ -1,7 +1,7 @@
 {
     "$schema": "DFIR Tool Update Configuration",
-    "version": "1.2",
-    "description": "Maps each DFIR tool on D:/ to its update source for automated or semi-automated update checking.",
+    "version": "1.3",
+    "description": "Maps each DFIR tool on D:/ to its update source for automated or semi-automated update checking. Optional fields per tool: native_update_cmd (string) for tools with built-in update/sync commands, ancillary_configs (array) for additional config/data sources to update alongside the tool, hash_verify (bool) to attempt SHA-256 verification from GitHub release notes.",
     "last_updated": "2026-03-15",
     "tools": [
         {
@@ -72,6 +72,23 @@
             "install_type": "extract_zip",
             "winget_id": null,
             "scoop_id": null,
+            "native_update_cmd": "kape.exe --update",
+            "ancillary_configs": [
+                {
+                    "name": "KAPE Targets",
+                    "source_type": "github",
+                    "source": "EricZimmerman/KapeFiles",
+                    "destination": "Targets",
+                    "type": "modules"
+                },
+                {
+                    "name": "KAPE Modules",
+                    "source_type": "github",
+                    "source": "EricZimmerman/KapeFiles",
+                    "destination": "Modules",
+                    "type": "modules"
+                }
+            ],
             "notes": "KAPE binary is distributed by Kroll (requires license/registration). KapeFiles (targets/modules) are on GitHub at EricZimmerman/KapeFiles and can be updated via KAPE's built-in updater. Use 'kape --update' to sync KapeFiles from GitHub. The binary itself requires manual download from Kroll."
         },
         {
@@ -184,6 +201,7 @@
             "install_type": "manual",
             "winget_id": null,
             "scoop_id": null,
+            "hash_verify": true,
             "notes": "Memory forensics framework (Python). Install via 'pip install volatility3' or download source. Requires Python 3.7+. Analyzes memory dumps from WinPmem, Magnet RAM Capture, etc."
         },
         {
@@ -228,6 +246,7 @@
             "install_type": "extract_7z",
             "winget_id": "hashcat.hashcat",
             "scoop_id": "main/hashcat",
+            "hash_verify": true,
             "notes": "Released as .7z archive. Download from hashcat.net. Also available via winget and scoop. Requires OpenCL-compatible GPU drivers."
         },
         {
@@ -312,6 +331,7 @@
             "install_type": "extract_zip",
             "winget_id": null,
             "scoop_id": null,
+            "native_update_cmd": "hayabusa.exe update-rules",
             "notes": "Windows event log fast forensics timeline generator and threat hunting tool. Written in Rust. Uses Sigma-based detection rules. Outputs CSV timelines."
         },
         {
@@ -424,6 +444,7 @@
             "install_type": "extract_zip",
             "winget_id": "WiresharkFoundation.Wireshark",
             "scoop_id": "extras/wireshark",
+            "hash_verify": true,
             "notes": "Network protocol analyzer. Portable version available as zip from wireshark.org. Also available via winget and scoop."
         },
         {

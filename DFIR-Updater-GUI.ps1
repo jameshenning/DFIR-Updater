@@ -86,11 +86,15 @@ $script:ModulePath          = Join-Path $script:ScriptDir "modules\Update-Checke
 $script:AutoDiscoveryPath   = Join-Path $script:ScriptDir "modules\Auto-Discovery.ps1"
 $script:ToolLauncherPath    = Join-Path $script:ScriptDir "modules\Tool-Launcher.ps1"
 $script:PkgManagerPath      = Join-Path $script:ScriptDir "modules\Package-Manager.ps1"
+$script:IntegrityCheckPath  = Join-Path $script:ScriptDir "modules\Integrity-Checker.ps1"
+$script:SelfUpdaterPath     = Join-Path $script:ScriptDir "modules\Self-Updater.ps1"
 $script:ConfigPath          = Join-Path $script:ScriptDir "tools-config.json"
 $script:HasModule           = Test-Path $script:ModulePath
 $script:HasAutoDiscovery    = Test-Path $script:AutoDiscoveryPath
 $script:HasToolLauncher     = Test-Path $script:ToolLauncherPath
 $script:HasPkgManager       = Test-Path $script:PkgManagerPath
+$script:HasIntegrityCheck   = Test-Path $script:IntegrityCheckPath
+$script:HasSelfUpdater      = Test-Path $script:SelfUpdaterPath
 
 # ─── Dot-source the update-checker backend ───────────────────────────────────
 Write-DebugLog "Modules: Update-Checker=$($script:HasModule) AutoDiscovery=$($script:HasAutoDiscovery) ToolLauncher=$($script:HasToolLauncher) PkgManager=$($script:HasPkgManager)" 'DEBUG'
@@ -121,6 +125,18 @@ if ($script:HasToolLauncher) {
 # ─── Dot-source the package manager module (optional) ────────────────────────
 if ($script:HasPkgManager) {
     . $script:PkgManagerPath
+    Set-StrictMode -Off
+}
+
+# ─── Dot-source the integrity checker module (optional) ──────────────────────
+if ($script:HasIntegrityCheck) {
+    . $script:IntegrityCheckPath
+    Set-StrictMode -Off
+}
+
+# ─── Dot-source the self-updater module (optional) ───────────────────────────
+if ($script:HasSelfUpdater) {
+    . $script:SelfUpdaterPath
     Set-StrictMode -Off
 }
 
@@ -1427,7 +1443,14 @@ function Toggle-ForensicMode {
             return
         }
 
-        # Enable write protection
+        $script:ForensicModeActive = $true
+        Write-Log "Forensic Mode: ON"
+
+        # Generate forensic report BEFORE write protection (drive is still writable)
+        Write-Log "Auto-generating forensic integrity report..."
+        $reportPath = New-ForensicReport
+
+        # Enable write protection AFTER writing the report
         $wpResult = Set-WriteProtection -Enable $true
         if (-not $wpResult) {
             Write-Log "WARNING: Could not enable write protection. You may need admin privileges."
@@ -1439,12 +1462,6 @@ function Toggle-ForensicMode {
             )
         }
 
-        $script:ForensicModeActive = $true
-        Write-Log "Forensic Mode: ON"
-
-        # Auto-generate forensic report on activation
-        Write-Log "Auto-generating forensic integrity report..."
-        $reportPath = New-ForensicReport
         if ($reportPath) {
             [System.Windows.MessageBox]::Show(
                 "Forensic Mode is now active.`n`nAn integrity report has been saved to:`n$reportPath`n`nThis report documents the drive state for chain-of-custody purposes.",
@@ -1776,6 +1793,19 @@ function Start-UpdateCheck {
         Write-Log "ERROR: RunspacePool is not available. Cannot check for updates."
         Set-StatusText "Background engine failed to start. Try restarting the application."
         return
+    }
+
+    # Network pre-flight check
+    if ($script:HasIntegrityCheck) {
+        $connectivity = Test-NetworkConnectivity
+        if (-not $connectivity.IsConnected) {
+            Write-Log "WARNING: No internet connectivity detected. Update check may fail."
+            Set-StatusText "No internet connection detected. Updates may not be available."
+        } elseif (-not $connectivity.GitHubReachable) {
+            Write-Log "WARNING: GitHub is not reachable. GitHub-sourced tools may fail to check."
+        } else {
+            Write-Log "Network pre-flight: OK ($($connectivity.Details))"
+        }
     }
 
     # Disable buttons during check
@@ -3864,6 +3894,27 @@ $window.Add_Loaded({
             }
         } else {
             Start-UpdateCheck
+        }
+
+        # Check for DFIR-Updater self-update (non-blocking)
+        if ($script:HasSelfUpdater) {
+            try {
+                $selfUpdate = Test-SelfUpdateAvailable
+                if ($selfUpdate -and $selfUpdate.UpdateAvailable) {
+                    Write-Log "DFIR-Updater update available: $($selfUpdate.CurrentVersion) -> $($selfUpdate.LatestVersion)"
+                    $updatePrompt = [System.Windows.MessageBox]::Show(
+                        "A new version of DFIR-Updater is available.`n`nCurrent: v$($selfUpdate.CurrentVersion)`nLatest:  v$($selfUpdate.LatestVersion)`n`nWould you like to view the release on GitHub?",
+                        "DFIR-Updater Update Available",
+                        [System.Windows.MessageBoxButton]::YesNo,
+                        [System.Windows.MessageBoxImage]::Information
+                    )
+                    if ($updatePrompt -eq [System.Windows.MessageBoxResult]::Yes) {
+                        Start-Process $selfUpdate.ReleaseUrl
+                    }
+                }
+            } catch {
+                Write-Log "Self-update check failed (non-critical): $($_.Exception.Message)"
+            }
         }
 
         # Show drive info in Settings
