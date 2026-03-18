@@ -1257,6 +1257,17 @@ function Get-DfirDiskNumber {
     return $null
 }
 
+# ─── Helper: Check if running as administrator ──────────────────────────────
+function Test-IsAdmin {
+    try {
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
+        return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
+}
+
 # ─── Helper: Set disk write protection via diskpart ──────────────────────────
 function Set-WriteProtection {
     param([bool]$Enable)
@@ -1266,32 +1277,81 @@ function Set-WriteProtection {
         return $false
     }
 
-    # Try PowerShell cmdlet first
-    try {
-        Set-Disk -Number $diskNum -IsReadOnly $Enable -ErrorAction Stop
-        Write-Log "Write protection $(if ($Enable) {'enabled'} else {'disabled'}) via Set-Disk (Disk #$diskNum)."
-        return $true
-    } catch {
-        Write-Log "Set-Disk failed: $($_.Exception.Message). Trying diskpart..."
+    # If already admin, try directly first
+    if (Test-IsAdmin) {
+        try {
+            Set-Disk -Number $diskNum -IsReadOnly $Enable -ErrorAction Stop
+            Write-Log "Write protection $(if ($Enable) {'enabled'} else {'disabled'}) via Set-Disk (Disk #$diskNum)."
+            return $true
+        } catch {
+            Write-Log "Set-Disk failed: $($_.Exception.Message). Trying diskpart..."
+        }
+
+        try {
+            $action = if ($Enable) { 'attributes disk set readonly' } else { 'attributes disk clear readonly' }
+            $dpScript = Join-Path $env:TEMP 'dfir-wp-toggle.txt'
+            @("select disk $diskNum", $action) | Set-Content -Path $dpScript -Encoding ASCII
+            $output = & diskpart /s $dpScript 2>&1
+            Remove-Item -LiteralPath $dpScript -Force -ErrorAction SilentlyContinue
+            foreach ($line in $output) {
+                if ($line -match 'successfully') {
+                    Write-Log "Write protection $(if ($Enable) {'enabled'} else {'disabled'}) via diskpart (Disk #$diskNum)."
+                    return $true
+                }
+            }
+        } catch {
+            Write-Log "diskpart (direct) failed: $($_.Exception.Message)"
+        }
+        return $false
     }
 
-    # Fallback: diskpart
+    # Not admin: launch an elevated process to set write protection
+    Write-Log "Not running as admin. Requesting elevation for write protection..."
     try {
-        $action = if ($Enable) { 'attributes disk set readonly' } else { 'attributes disk clear readonly' }
-        $dpScript = Join-Path $env:TEMP 'dfir-wp-toggle.txt'
-        @("select disk $diskNum", $action) | Set-Content -Path $dpScript -Encoding ASCII
-        $output = & diskpart /s $dpScript 2>&1
-        Remove-Item -LiteralPath $dpScript -Force -ErrorAction SilentlyContinue
-        $success = $false
-        foreach ($line in $output) {
-            if ($line -match 'successfully') { $success = $true; break }
-        }
-        if ($success) {
-            Write-Log "Write protection $(if ($Enable) {'enabled'} else {'disabled'}) via diskpart (Disk #$diskNum)."
+        $resultFile = Join-Path $env:TEMP 'dfir-wp-result.txt'
+        if (Test-Path $resultFile) { Remove-Item -LiteralPath $resultFile -Force }
+
+        $elevatedScript = @"
+try {
+    Set-Disk -Number $diskNum -IsReadOnly `$$Enable -ErrorAction Stop
+    'SUCCESS' | Set-Content -Path '$($resultFile -replace "'","''")' -Encoding ASCII
+} catch {
+    try {
+        `$action = if (`$$Enable) { 'attributes disk set readonly' } else { 'attributes disk clear readonly' }
+        `$dpScript = Join-Path `$env:TEMP 'dfir-wp-toggle.txt'
+        @("select disk $diskNum", `$action) | Set-Content -Path `$dpScript -Encoding ASCII
+        `$output = & diskpart /s `$dpScript 2>&1
+        Remove-Item -LiteralPath `$dpScript -Force -ErrorAction SilentlyContinue
+        `$found = `$false
+        foreach (`$line in `$output) { if (`$line -match 'successfully') { `$found = `$true; break } }
+        if (`$found) { 'SUCCESS' | Set-Content -Path '$($resultFile -replace "'","''")' -Encoding ASCII }
+        else { 'FAIL' | Set-Content -Path '$($resultFile -replace "'","''")' -Encoding ASCII }
+    } catch {
+        'FAIL' | Set-Content -Path '$($resultFile -replace "'","''")' -Encoding ASCII
+    }
+}
+"@
+
+        $encodedCmd = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($elevatedScript))
+
+        $proc = Start-Process -FilePath 'powershell.exe' `
+            -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encodedCmd `
+            -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop
+
+        # Read result
+        if ((Test-Path $resultFile) -and ((Get-Content -LiteralPath $resultFile -Raw).Trim() -eq 'SUCCESS')) {
+            Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue
+            Write-Log "Write protection $(if ($Enable) {'enabled'} else {'disabled'}) via elevated process (Disk #$diskNum)."
             return $true
         }
+        Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue
+        Write-Log "Elevated write protection command did not succeed."
     } catch {
-        Write-Log "diskpart failed: $($_.Exception.Message)"
+        if ($_.Exception.Message -match 'canceled by the user|was cancelled') {
+            Write-Log "User declined UAC elevation for write protection."
+        } else {
+            Write-Log "Elevation failed: $($_.Exception.Message)"
+        }
     }
     return $false
 }
