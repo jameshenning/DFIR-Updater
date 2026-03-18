@@ -52,34 +52,32 @@ A portable, self-contained update manager for DFIR (Digital Forensics & Incident
 
 **Automatic Update Management**
 
-- Queries GitHub releases for 49+ tracked DFIR tools and compares versions automatically
-- Parallel version checking via RunspacePool -- checks multiple tools concurrently for faster results
+- Queries GitHub releases for 34 tracked DFIR tools and compares versions automatically
+- Background version checking via RunspacePool -- keeps the GUI responsive during update checks
 - Selective updates via checkboxes -- choose exactly which tools to update
 - Backup and rollback on every update; automatic restore on failure
 - Supports multiple install types: zip extraction, 7z extraction, single-exe copy, and manual instructions
 - Package manager integration (winget, scoop) with automatic fallback to direct download
 - Tool-native update commands -- runs `--sync`, `--update-rules`, etc. after installation for tools that support it
-- Ancillary config updates -- downloads KAPE targets/modules, EvtxECmd maps, and YARA rules alongside tool binaries
+- Ancillary config updates -- downloads KAPE targets/modules alongside tool binaries (extensible to other tool configs)
 
 **Integrity and Verification**
 
-- SHA-256 hash verification of downloads against GitHub release notes (for tools that publish hashes)
-- PE version auto-detection -- reads installed versions directly from executable metadata via `FileVersionInfo`
-- ETag caching for web-sourced tools -- skips unnecessary downloads when remote files have not changed
 - Network pre-flight connectivity check before starting update cycles
 - Self-update notifications -- checks for new DFIR-Updater releases on startup
+- Integrity-Checker module provides SHA-256 hash verification, PE version auto-detection via `FileVersionInfo`, and ETag caching functions for future integration and scripting use
 
 **Professional WPF GUI**
 
 - Dark-themed interface with color-coded status rows (green = current, yellow = update available, gray = manual check)
-- Sidebar navigation with Dashboard, Tools, Tool Launcher, and Settings panels
+- Sidebar navigation with Dashboard (Tool Launcher), Update Center, Linux/macOS References, and Settings panels
 - Real-time progress bar and scrolling log panel
 - Right-click context menu for per-tool actions (open download page, set custom version)
 
 **Auto-Discovery**
 
 - Scans the drive for newly added tools not yet tracked in configuration
-- Matches against a built-in database of 133+ known DFIR GitHub repositories
+- Matches against a built-in database of 133+ known DFIR tool patterns (93 with GitHub repo mappings)
 - One-click addition with pre-filled configuration entries
 
 **Tool Launcher**
@@ -279,24 +277,34 @@ D:\
     ├── Launch-Updater.bat           Entry point (double-click launcher)
     ├── DFIR-Updater-GUI.ps1         Main WPF GUI application
     ├── tools-config.json            Tool definitions and update sources
+    ├── VERSION                      Current application version
     ├── Setup-AutoLaunch.ps1         Task Scheduler registration
     ├── Portable-Setup.ps1           First-run wizard for new machines
     ├── Bootstrap-DFIR-Drive.ps1     Clone toolkit to a new USB drive
     ├── Build-Exe.ps1                Compile to standalone .exe
-    ├── Init-GitRepo.ps1             Push framework to GitHub
     ├── Forensic-Mode.bat            Toggle Forensic Mode
     ├── Forensic-Cleanup.ps1         Remove updater artifacts from target
     ├── Write-Protect.bat            Toggle disk write protection
     ├── Write-Protect.ps1            Write protection logic
     ├── Create-Shortcuts.ps1         Generate .lnk shortcuts for tools
-    ├── scan-manifest.json           Auto-discovery tracking (generated)
-    ├── VERSION                      Current application version
+    ├── LICENSE                      MIT License
+    ├── CONTRIBUTING.md              Contribution guidelines
+    ├── SECURITY.md                  Security policy and vulnerability reporting
+    ├── PSScriptAnalyzerSettings.psd1  Linter configuration
+    ├── .editorconfig                Editor formatting rules
+    ├── .github\
+    │   ├── workflows\
+    │   │   ├── build.yml            Build on push/PR to main
+    │   │   ├── release.yml          Auto-release on version tags
+    │   │   └── pssa.yml             PowerShell linting
+    │   ├── ISSUE_TEMPLATE\          Bug report and feature request forms
+    │   └── PULL_REQUEST_TEMPLATE.md PR template
     └── modules\
         ├── Update-Checker.ps1       GitHub API, version comparison, downloads
         ├── Auto-Discovery.ps1       New tool detection and identification
         ├── Tool-Launcher.ps1        Drive scanning for Tool Launcher
         ├── Package-Manager.ps1      Package manager integration
-        ├── Integrity-Checker.ps1    Hash verification, PE version detection, ETag caching
+        ├── Integrity-Checker.ps1    Network checks; hash, PE version, ETag functions
         └── Self-Updater.ps1         Self-update and silent/headless mode
 ```
 
@@ -306,7 +314,7 @@ D:\
 
 The `Build-Exe.ps1` script compiles the application into a standalone `.exe` using [PS2EXE](https://github.com/MScholtes/PS2EXE). The build process:
 
-1. Merges all module files into a single script (inlining dot-sourced dependencies).
+1. Merges the four core module files (Update-Checker, Auto-Discovery, Tool-Launcher, Package-Manager) into a single script. Integrity-Checker and Self-Updater are included as separate files in the distribution.
 2. Compiles the merged script to a Windows executable with PS2EXE.
 3. Copies supporting files (`tools-config.json`, modules).
 4. Packages everything into a distributable `DFIR-Updater-Portable.zip`.
@@ -357,7 +365,7 @@ Each tool entry uses this schema:
 | `winget_id` | Windows Package Manager ID (e.g., `"hashcat.hashcat"`). Used as primary update source when available. |
 | `scoop_id` | Scoop package ID (e.g., `"main/hashcat"`). Preferred for portable installs. |
 | `native_update_cmd` | Command the tool supports for self-updating (e.g., `"EvtxECmd.exe --sync"`). Runs after installation. |
-| `hash_verify` | `true` to attempt SHA-256 verification from GitHub release notes after download. |
+| `hash_verify` | `true` to flag this tool for SHA-256 verification. The Integrity-Checker module provides `Test-FileHash` and `Get-GitHubReleaseHash` functions for use in scripts; GUI integration is planned. |
 | `ancillary_configs` | Array of additional config/rule files to update alongside the tool (see below). |
 | `notes` | Free-text notes displayed in the GUI. |
 
@@ -371,23 +379,41 @@ Each tool entry uses this schema:
 | `destination` | Subdirectory within the tool's install path. |
 | `type` | Category label (e.g., `"modules"`, `"rules"`, `"maps"`). |
 
-**Example entry:**
+**Example entry (GitHub-sourced tool with native update command):**
+
+```json
+{
+  "name": "Hayabusa",
+  "path": "02_Analysis/Hayabusa",
+  "source_type": "github",
+  "github_repo": "Yamato-Security/hayabusa",
+  "github_asset_pattern": "hayabusa-.*-win-x64\\.zip",
+  "download_url": "https://github.com/Yamato-Security/hayabusa/releases/latest",
+  "current_version": null,
+  "version_pattern": "v([\\d.]+)",
+  "install_type": "extract_zip",
+  "native_update_cmd": "hayabusa.exe update-rules",
+  "notes": "Windows event log fast forensics timeline generator."
+}
+```
+
+**Example entry (web-sourced tool with package managers):**
 
 ```json
 {
   "name": "hashcat",
   "path": "02_Analysis/hashcat-6.2.6",
-  "source_type": "github",
-  "github_repo": "hashcat/hashcat",
-  "github_asset_pattern": "hashcat-[\\d.]+\\.7z",
-  "download_url": null,
-  "current_version": "6.2.6",
-  "version_pattern": "hashcat-([\\d.]+)",
+  "source_type": "web",
+  "github_repo": null,
+  "download_url": "https://hashcat.net/hashcat/",
+  "download_url_template": "https://hashcat.net/files/hashcat-{version}.7z",
+  "current_version": "7.1.2",
+  "version_pattern": "hashcat binaries[^<]*v([\\d.]+)",
   "install_type": "extract_7z",
   "winget_id": "hashcat.hashcat",
   "scoop_id": "main/hashcat",
   "hash_verify": true,
-  "notes": "Released as .7z archive on GitHub."
+  "notes": "Released as .7z archive. Download from hashcat.net."
 }
 ```
 
@@ -431,20 +457,20 @@ DFIR-Updater is built as a modular PowerShell application with a WPF GUI fronten
 | Module | Responsibility |
 |---|---|
 | `DFIR-Updater-GUI.ps1` | WPF interface, event handling, RunspacePool management, forensic mode toggle |
-| `Update-Checker.ps1` | GitHub API queries, web scraping, version comparison, download/install with backup and rollback, parallel checking, tool-native commands, ancillary configs |
-| `Auto-Discovery.ps1` | Drive scanning, tool identification against 133+ known DFIR repos, config generation |
+| `Update-Checker.ps1` | GitHub API queries, web scraping, version comparison, download/install with backup and rollback, tool-native commands, ancillary configs |
+| `Auto-Discovery.ps1` | Drive scanning, tool identification against 133+ known DFIR tool patterns (93 with GitHub repos), config generation |
 | `Tool-Launcher.ps1` | Executable discovery, icon extraction, PortableApps integration |
 | `Package-Manager.ps1` | winget/scoop/chocolatey detection, unified install and version query interface |
-| `Integrity-Checker.ps1` | PE metadata version extraction, SHA-256 hash verification, ETag caching, network connectivity testing |
+| `Integrity-Checker.ps1` | Network connectivity testing (active); PE version extraction, SHA-256 hash verification, and ETag caching functions (available for scripting and future GUI integration) |
 | `Self-Updater.ps1` | Self-update from GitHub releases, headless/silent update mode for scheduled runs |
 
 **Update flow:**
 
 1. On startup, the GUI loads all modules and checks for DFIR-Updater self-updates.
 2. A network pre-flight check validates connectivity to GitHub and the internet.
-3. `Start-UpdateCheck` spawns a background RunspacePool that queries GitHub API and web sources in parallel.
+3. `Start-UpdateCheck` spawns a background runspace that queries GitHub API and web sources sequentially for each tool (keeping the GUI responsive).
 4. Results are dispatched back to the WPF UI thread via `Dispatcher.BeginInvoke`.
-5. When the user triggers an update, the system tries package managers first (scoop > winget), then falls back to direct download.
+5. When the user triggers an update, the system downloads from GitHub release assets or direct URLs. Package manager version lookups supplement version detection when direct checks fail.
 6. Each update creates a timestamped backup, extracts/copies the new version, runs any `native_update_cmd`, and updates `ancillary_configs`.
 7. On failure, the backup is automatically restored.
 
@@ -481,5 +507,5 @@ This project is distributed under the MIT License. See [LICENSE](LICENSE) for de
 - All forensic tools referenced in this project are the property of their respective developers and organizations.
 - GUI built with Windows Presentation Foundation (WPF).
 - Standalone `.exe` compilation powered by [PS2EXE](https://github.com/MScholtes/PS2EXE).
-- Auto-discovery database covers 133+ known DFIR repositories from the open-source forensics community.
+- Auto-discovery database covers 133+ known DFIR tool patterns (93 with GitHub repository mappings) from the open-source forensics community.
 - Inspired by [MemProcFS-Analyzer Updater](https://github.com/LETHAL-FORENSICS/MemProcFS-Analyzer) and [KAPE-EZToolsAncillaryUpdater](https://github.com/AndrewRathbun/KAPE-EZToolsAncillaryUpdater).
